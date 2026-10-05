@@ -1,0 +1,62 @@
+name: Release AI Atlas
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Verify tag and version metadata
+        run: python3 scripts/version.py --check "${GITHUB_REF_NAME#v}"
+      - name: Install pinned Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.27
+      - name: Test Go services
+        run: go test -race ./internal/... ./cmd/atlas-index
+      - name: Build app bundle
+        run: wails3 package ARCH=${{ matrix.arch }}
+      - name: Package verified update archive
+        run: python3 scripts/package-release.py --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: release-dist/*.zip
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: macos-*
+          merge-multiple: true
+          path: release-dist
+      - name: Create checksum file and publish Release
+        working-directory: release-dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          sha256sum *.zip > SHA256SUMS
+          gh release create "$RELEASE_TAG" --verify-tag --title "AI Atlas $RELEASE_TAG" --generate-notes *.zip SHA256SUMS

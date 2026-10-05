@@ -107,3 +107,37 @@ frontend/e2e/              Playwright 端到端测试
 ```
 
 Wails v3 为 Beta，Go 模块与前端 runtime 固定到同一个版本。默认桌面 UI 不需要另起 Web 服务。
+
+## AI Atlas 自身更新
+
+点击左下角版本号，从 `wangle201210/ai-atlas` 的 GitHub Releases 检查更高的正式版本。发现更新后可查看更新说明，点击「下载更新」，下载及 SHA-256 校验完成后再点击「重启并安装」。下载不会自动重启；安装只替换应用包，不改动独立数据库。
+
+目前自动安装支持 macOS 的完整 `.app`（Apple Silicon / Intel）。浏览器、直接运行的开发二进制及其他系统只能检查并打开 Release 页面。应用所在目录需要可写；扫描进行中会阻止重启。网络失败、GitHub 限流、缺少对应架构附件、缺失或错误校验值会显示错误并允许重试。没有 Release 或没有更高正式版本时显示“当前没有可用更新”。
+
+### 发布更新版本
+
+版本唯一来源是 `internal/buildinfo/VERSION`，页脚从后端读取。用脚本同步打包元数据，避免安装后版本仍显示旧值：
+
+```sh
+python3 scripts/version.py 0.1.2
+python3 scripts/version.py --check
+git add internal/buildinfo/VERSION frontend/package.json frontend/package-lock.json build/config.yml build/darwin/Info*.plist
+git commit -m "chore: release v0.1.2"
+git tag v0.1.2
+git push origin main v0.1.2
+```
+
+推送 `v*` 标签会触发 `.github/workflows/release.yml`，为 arm64 / amd64 打包并发布三个必需附件：
+
+- `ai-atlas-darwin-arm64.zip`
+- `ai-atlas-darwin-amd64.zip`
+- `SHA256SUMS`
+
+每个 ZIP 只包含一个完整 `ai-atlas.app`。更新器仅接受与本机架构匹配的固定附件名称，并强制验证校验值。发布链路通过 GitHub HTTPS 获取资产与校验文件；当前构建为 ad-hoc 签名，未做 Apple Developer ID 签名及公证。
+
+本地检查打包产物（不会发布）：
+
+```sh
+wails3 package ARCH=arm64
+python3 scripts/package-release.py --arch arm64
+```

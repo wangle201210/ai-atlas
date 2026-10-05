@@ -16,3 +16,5 @@ frontend/playwright-report/
 *.sqlite-shm
 *.sqlite-wal
 .DS_Store
+
+/release-dist/

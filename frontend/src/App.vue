@@ -25,6 +25,7 @@ import {
 import { Clipboard } from "@wailsio/runtime";
 import { api } from "./api";
 import appIcon from "./assets/token-signal.svg";
+import UpdateControl from "./components/UpdateControl.vue";
 import type {
   Snapshot,
   ScanStatus,
@@ -378,8 +379,7 @@ onUnmounted(() => {
       <a class="brand" href="#" @click.prevent="navigate('overview')"
         ><span class="brand-mark"><img :src="appIcon" alt="" /></span
         ><span
-          >AI <strong>Atlas</strong
-          ><small>LOCAL WORKSPACE MANAGER</small></span
+          >AI <strong>Atlas</strong><small>LOCAL WORKSPACE MANAGER</small></span
         ></a
       >
       <div class="nav-caption">工作空间</div>
@@ -404,7 +404,7 @@ onUnmounted(() => {
         <button class="settings-button" @click="settings = true">
           <Settings2 :size="17" />数据源与统计口径
         </button>
-        <div class="version">AI ATLAS <span>v0.1.1</span></div>
+        <UpdateControl />
       </div>
     </aside>
     <div class="main-shell">
@@ -1270,9 +1270,8 @@ onUnmounted(() => {
             Codex CLI 执行。
           </p>
           <p>
-            可用 CODEX_HOME 和 AI_ATLAS_DB 环境变量指定数据源与数据库。Codex
-            CLI 自动从 PATH、Homebrew 和 NVM 位置查找，也可用 AI_ATLAS_CODEX
-            指定。
+            可用 CODEX_HOME 和 AI_ATLAS_DB 环境变量指定数据源与数据库。Codex CLI
+            自动从 PATH、Homebrew 和 NVM 位置查找，也可用 AI_ATLAS_CODEX 指定。
           </p>
         </div></template
       >
