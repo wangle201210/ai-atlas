@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "file": "01-atlas-navigator",
+    "title": "Navigator",
+    "name": "导航罗盘",
+    "description": "C 形轨道与 A 形指针，突出 AI Atlas 的品牌识别。"
+  },
+  {
+    "id": 2,
+    "file": "02-session-vault",
+    "title": "Session Vault",
+    "name": "会话档案库",
+    "description": "三层归档盒与薄荷绿勾选，强调会话整理与清理。"
+  },
+  {
+    "id": 3,
+    "file": "03-conversation-orbit",
+    "title": "Conversation",
+    "name": "会话轨道",
+    "description": "前后叠放的气泡，代表多会话与上下文。"
+  },
+  {
+    "id": 4,
+    "file": "04-project-compass",
+    "title": "Project Compass",
+    "name": "项目指南针",
+    "description": "文件夹与罗盘，直观表达项目目录管理。"
+  },
+  {
+    "id": 5,
+    "file": "05-token-signal",
+    "title": "Token Signal",
+    "name": "用量信号",
+    "description": "六边形容器与阶梯柱形图，强调 Token 数据。"
+  },
+  {
+    "id": 6,
+    "file": "06-space-lens",
+    "title": "Space Lens",
+    "name": "空间透镜",
+    "description": "环形存储分布与中心指针，适合存储分析定位。"
+  },
+  {
+    "id": 7,
+    "file": "07-atlas-monogram",
+    "title": "Atlas Monogram",
+    "name": "字母徽记",
+    "description": "简洁的 C + A 字母组合，小尺寸辨识度高。"
+  },
+  {
+    "id": 8,
+    "file": "08-project-network",
+    "title": "Project Network",
+    "name": "项目脉络",
+    "description": "连接的项目节点，表达项目、会话和文件的关联。"
+  },
+  {
+    "id": 9,
+    "file": "09-terminal-spark",
+    "title": "Terminal Spark",
+    "name": "终端灵光",
+    "description": "终端命令与亮点，偏开发者工具气质。"
+  },
+  {
+    "id": 10,
+    "file": "10-workspace-atlas",
+    "title": "Workspace Atlas",
+    "name": "工作空间地图",
+    "description": "折叠地图和路径，呼应 Atlas 与文件追溯。"
+  }
+]

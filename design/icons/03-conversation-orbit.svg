@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8a8bff"/><stop offset="1" stop-color="#443cc1"/></linearGradient>
+<linearGradient id="white" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#dce7ff"/></linearGradient>
+<linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b9fff0"/><stop offset="1" stop-color="#37d9c4"/></linearGradient>
+<linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#86b9ff"/><stop offset="1" stop-color="#5270f5"/></linearGradient>
+<filter id="shadow" x="-40%" y="-40%" width="180%" height="190%"><feDropShadow dx="0" dy="20" stdDeviation="19" flood-color="#081d47" flood-opacity=".22"/></filter>
+</defs>
+<rect x="64" y="64" width="896" height="896" rx="206" fill="url(#tile)"/>
+<rect x="65" y="65" width="894" height="894" rx="205" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2"/>
+
+<g filter="url(#shadow)">
+ <path d="M327 429Q327 320 442 320H700Q806 320 806 430V600Q806 708 700 708H657L548 788V708H442Q327 708 327 600Z" fill="#a7bcff"/>
+ <path d="M202 332Q202 230 310 230H555Q666 230 666 338V497Q666 604 555 604H361L265 676V595Q202 568 202 497Z" fill="url(#white)"/>
+ <circle cx="320" cy="420" r="25" fill="#6869db"/><circle cx="430" cy="420" r="25" fill="#6869db"/><circle cx="540" cy="420" r="25" fill="#6869db"/>
+ <path d="m674 513 21 56 57 21-57 21-21 56-21-56-57-21 57-21Z" fill="url(#mint)"/>
+</g>
+</svg>

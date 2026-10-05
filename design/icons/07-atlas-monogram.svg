@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#162333"/><stop offset="1" stop-color="#101821"/></linearGradient>
+<linearGradient id="white" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#dce7ff"/></linearGradient>
+<linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b9fff0"/><stop offset="1" stop-color="#37d9c4"/></linearGradient>
+<linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#86b9ff"/><stop offset="1" stop-color="#5270f5"/></linearGradient>
+<filter id="shadow" x="-40%" y="-40%" width="180%" height="190%"><feDropShadow dx="0" dy="20" stdDeviation="19" flood-color="#081d47" flood-opacity=".22"/></filter>
+</defs>
+<rect x="64" y="64" width="896" height="896" rx="206" fill="url(#tile)"/>
+<rect x="65" y="65" width="894" height="894" rx="205" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="2"/>
+
+<g filter="url(#shadow)">
+ <path d="M704 317C613 215 376 213 281 356 186 499 254 721 420 761" fill="none" stroke="url(#mint)" stroke-width="83" stroke-linecap="round"/>
+ <path d="M382 734 538 288 727 734" fill="none" stroke="url(#white)" stroke-width="77" stroke-linecap="round" stroke-linejoin="round"/>
+ <path d="M439 580H660" stroke="url(#white)" stroke-width="65" stroke-linecap="round"/>
+</g>
+</svg>

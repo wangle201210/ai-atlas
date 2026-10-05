@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+<linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#123f52" /><stop offset="1" stop-color="#102938" /></linearGradient>
+<linearGradient id="white" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#ffffff" /><stop offset="1" stop-color="#dce7ff" /></linearGradient>
+<linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b9fff0" /><stop offset="1" stop-color="#37d9c4" /></linearGradient>
+<linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#86b9ff" /><stop offset="1" stop-color="#5270f5" /></linearGradient>
+<filter id="shadow" x="-40%" y="-40%" width="180%" height="190%"><feDropShadow dx="0" dy="20" stdDeviation="19" flood-color="#081d47" flood-opacity=".22" /></filter>
+</defs>
+<g>
+ <path d="M512 205 773 353V659L512 809 251 659V353Z" fill="none" stroke="#7fe5d8" stroke-width="32" stroke-linejoin="round" />
+ <rect x="348" y="518" width="78" height="159" rx="25" fill="#efffff" />
+ <rect x="473" y="416" width="78" height="261" rx="25" fill="#efffff" />
+ <rect x="598" y="316" width="78" height="361" rx="25" fill="url(#mint)" />
+</g>
+</svg>

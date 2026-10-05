@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A ai-atlas application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/ai-atlas %u
+Terminal=false
+Type=Application
+Icon=ai-atlas
+Categories=Utility;
+StartupWMClass=ai-atlas
