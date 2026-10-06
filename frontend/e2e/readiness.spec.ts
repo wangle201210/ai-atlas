@@ -49,7 +49,8 @@ test("settings persist and long sessions show latest messages with search", asyn
   ).toBeChecked();
   await expect(
     page.getByLabel("扫描系统临时目录（/tmp 和 TMPDIR）"),
-  ).not.toBeChecked();
+  ).toBeChecked();
+  await expect(page.locator(".cli-path")).toContainText("当前生效路径（已保存配置）");
   await page.getByLabel("额外临时目录（每行一个）").fill(extra);
   await page.getByRole("button", { name: "保存设置", exact: true }).click();
   await expect(

@@ -238,4 +238,37 @@ func (s *Service) Diagnostics() (string, error) {
 	return string(b), err
 }
 
+func AttachDiagnosticPicker(s *Service, picker func() (string, error)) {
+	s.pickDiagnosticFile = picker
+}
+
+// ExportDiagnostics returns an empty path when the user cancels the save dialog.
+func (s *Service) ExportDiagnostics() (string, error) {
+	if s.pickDiagnosticFile == nil {
+		return "", errors.New("当前运行方式不支持系统保存窗口，请使用桌面应用导出诊断")
+	}
+	raw, err := s.Diagnostics()
+	if err != nil {
+		return "", fmt.Errorf("生成诊断失败: %w", err)
+	}
+	path, err := s.pickDiagnosticFile()
+	if err != nil || path == "" {
+		return "", err
+	}
+	// Write beside the destination, then replace only after the complete file is closed.
+	f, err := os.CreateTemp(filepath.Dir(path), ".ai-atlas-diagnostics-*")
+	if err != nil {
+		return "", fmt.Errorf("保存诊断失败: %w", err)
+	}
+	defer os.Remove(f.Name())
+	_, writeErr := f.WriteString(raw + "\n")
+	if err = errors.Join(writeErr, f.Close()); err != nil {
+		return "", fmt.Errorf("保存诊断失败: %w", err)
+	}
+	if err = os.Rename(f.Name(), path); err != nil {
+		return "", fmt.Errorf("保存诊断失败: %w", err)
+	}
+	return path, nil
+}
+
 func InstanceKey(s *Service) string { return "local.aiatlas." + sourceID(s.dbPath) }

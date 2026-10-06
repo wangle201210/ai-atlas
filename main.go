@@ -62,6 +62,9 @@ func main() {
 	}, func() (string, error) {
 		return app.Dialog.OpenFile().CanChooseDirectories(false).CanChooseFiles(true).AttachToWindow(window).PromptForSingleSelection()
 	})
+	atlas.AttachDiagnosticPicker(service, func() (string, error) {
+		return app.Dialog.SaveFile().SetFilename("ai-atlas-diagnostics.json").AddFilter("JSON 诊断文件", "*.json").CanCreateDirectories(true).AttachToWindow(window).PromptForSingleSelection()
+	})
 	if err = app.Run(); err != nil {
 		log.Print(err)
 	}

@@ -134,7 +134,7 @@ onUnmounted(() => clearInterval(timer));
       <div class="modal-header">
         <div>
           <div class="eyebrow">AI ATLAS · SOFTWARE UPDATE</div>
-          <h2 id="update-title">{{ headings[state.phase] || "检查更新" }}</h2>
+          <h2 id="update-title" tabindex="-1" autofocus>{{ headings[state.phase] || "检查更新" }}</h2>
         </div>
         <button class="icon-button" aria-label="关闭更新窗口" @click="close">
           <X :size="20" />

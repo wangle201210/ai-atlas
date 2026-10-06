@@ -18,3 +18,4 @@ frontend/playwright-report/
 .DS_Store
 
 /release-dist/
+/.idea/

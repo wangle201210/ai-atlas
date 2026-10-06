@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { FolderOpen, RefreshCw, Download, ExternalLink } from "lucide-vue-next";
 import { Browser } from "@wailsio/runtime";
 import type {
@@ -15,6 +15,9 @@ const config = ref<Settings>(),
   busy = ref(false),
   error = ref(""),
   saved = ref(false);
+const exportNotice = ref("");
+let exportNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+onUnmounted(() => clearTimeout(exportNoticeTimer));
 async function run(fn: () => Promise<void>) {
   busy.value = true;
   error.value = "";
@@ -54,16 +57,14 @@ async function save() {
   });
 }
 async function diagnostics() {
+  clearTimeout(exportNoticeTimer);
+  exportNotice.value = "";
   await run(async () => {
-    const raw = await (await backend()).Diagnostics();
-    const url = URL.createObjectURL(
-      new Blob([raw], { type: "application/json" }),
-    );
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "ai-atlas-diagnostics.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    const path = await (await backend()).ExportDiagnostics();
+    if (path) {
+      exportNotice.value = `诊断已保存至：${path}`;
+      exportNoticeTimer = setTimeout(() => (exportNotice.value = ""), 10000);
+    }
   });
 }
 onMounted(() =>
@@ -110,6 +111,11 @@ onMounted(() =>
           选择文件
         </button>
       </div>
+      <p class="muted cli-path" aria-live="polite">
+        当前生效路径（已保存配置）：<code>{{
+          environment?.cliPath || (environment ? "未找到 Codex CLI" : "正在检测…")
+        }}</code>
+      </p>
       <div v-if="environment" class="environment-result">
         <span>{{
           environment.homeExists
@@ -130,7 +136,7 @@ onMounted(() =>
         />扫描系统临时目录（/tmp 和 TMPDIR）</label
       >
       <p class="muted">
-        默认关闭。系统临时目录包含其他应用的文件，开启后也只会默认展示有本工具引用线索的项目。
+        默认开启。系统临时目录包含其他应用的文件，默认只展示有会话引用线索的项目；此开关不影响会话日志统计。
       </p>
       <label for="extra-temp">额外临时目录（每行一个）</label
       ><textarea
@@ -167,6 +173,9 @@ onMounted(() =>
         <ExternalLink :size="14" />反馈问题
       </button>
     </div>
+    <p v-if="exportNotice" class="banner info cli-path" role="status">
+      {{ exportNotice }}
+    </p>
     <p class="muted">
       诊断仅包含计数和任务状态，不包含路径、消息、标题或会话
       ID。会话数据留在本机；仅检查更新和打开反馈入口时访问 GitHub。
@@ -187,6 +196,12 @@ onMounted(() =>
 .setting-path input {
   flex: 1;
   min-width: 0;
+}
+.cli-path {
+  overflow-wrap: anywhere;
+}
+.cli-path code {
+  user-select: text;
 }
 .preferences textarea {
   width: 100%;

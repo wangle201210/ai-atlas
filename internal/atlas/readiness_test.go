@@ -56,8 +56,8 @@ func TestScanCancelRetryAndSettings(t *testing.T) {
 		t.Fatal("cancellation not reflected")
 	}
 	cfg := s.Settings()
-	if cfg.ScanSystemTemp || !cfg.BackupSessions {
-		t.Fatal("unsafe initial settings")
+	if !cfg.ScanSystemTemp || !cfg.BackupSessions {
+		t.Fatal("system temp scanning and session backups should default to enabled")
 	}
 	cfg.ExcludedDirectories = []string{filepath.Dir(path)}
 	if err = s.SaveSettings(cfg); err != nil {

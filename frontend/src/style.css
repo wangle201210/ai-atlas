@@ -49,6 +49,10 @@ select:focus-visible {
   outline: 3px solid #a5b5ff;
   outline-offset: 2px;
 }
+/* Dialogs initially focus their heading instead of highlighting an action. */
+.modal-header h2:focus {
+  outline: none;
+}
 button {
   border: 0;
   background: none;

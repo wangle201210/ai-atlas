@@ -37,6 +37,13 @@ export function ExecuteClean(token: string, confirmation: string): $CancellableP
     return $Call.ByID(3225958592, token, confirmation);
 }
 
+/**
+ * ExportDiagnostics returns an empty path when the user cancels the save dialog.
+ */
+export function ExportDiagnostics(): $CancellablePromise<string> {
+    return $Call.ByID(4027008562);
+}
+
 export function Overview(since: string, until: string): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(2324921327, since, until);
 }

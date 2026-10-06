@@ -17,21 +17,22 @@ import (
 )
 
 type Service struct {
-	pickDirectory func() (string, error)
-	pickFile      func() (string, error)
-	settings      Settings
-	scanCancel    context.CancelFunc
-	jobs          sync.WaitGroup
-	closing       bool
-	trashDir      string
-	db            *sql.DB
-	home, dbPath  string
-	roots         []string
-	mu            sync.Mutex
-	status        ScanStatus
-	temps         []TempFile
-	plans         map[string]CleanPlan
-	operation     sync.Mutex
+	pickDirectory      func() (string, error)
+	pickFile           func() (string, error)
+	pickDiagnosticFile func() (string, error)
+	settings           Settings
+	scanCancel         context.CancelFunc
+	jobs               sync.WaitGroup
+	closing            bool
+	trashDir           string
+	db                 *sql.DB
+	home, dbPath       string
+	roots              []string
+	mu                 sync.Mutex
+	status             ScanStatus
+	temps              []TempFile
+	plans              map[string]CleanPlan
+	operation          sync.Mutex
 }
 
 func New(home, dbPath string) (*Service, error) {
@@ -53,7 +54,7 @@ func New(home, dbPath string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := Settings{Home: home, BackupSessions: true, TempDirectories: []string{}, ExcludedDirectories: []string{}}
+	cfg := Settings{Home: home, ScanSystemTemp: true, BackupSessions: true, TempDirectories: []string{}, ExcludedDirectories: []string{}}
 	var raw string
 	if err = db.QueryRow("SELECT value FROM metadata WHERE key='settings'").Scan(&raw); err == nil {
 		if err = json.Unmarshal([]byte(raw), &cfg); err != nil {

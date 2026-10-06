@@ -25,6 +25,7 @@ import {
 } from "lucide-vue-next";
 import { Clipboard } from "@wailsio/runtime";
 import { api } from "./api";
+import { rememberedChoice } from "./preferences";
 import appIcon from "./assets/token-signal.svg";
 import UpdateControl from "./components/UpdateControl.vue";
 import PreferencesPanel from "./components/PreferencesPanel.vue";
@@ -63,7 +64,7 @@ const busy = ref(false),
   search = ref(""),
   project = ref(""),
   state = ref("all"),
-  sort = ref("updated"),
+  sort = rememberedChoice("session-sort", ["updated", "size", "tokens"], "updated"),
   page = ref(0),
   since = ref(""),
   until = ref("");
@@ -78,7 +79,7 @@ const sessions = ref<SessionPage>({ items: [], total: 0 }),
   results = ref<CleanResult[]>([]),
   settings = ref(false);
 const dialog = ref<HTMLDialogElement>(),
-  projectSort = ref("tokens"),
+  projectSort = rememberedChoice("project-sort", ["tokens", "bytes"], "tokens"),
   resume = ref(""),
   copyNotice = ref(""),
   messageSearch = ref(""),
@@ -1162,7 +1163,7 @@ onUnmounted(() => {
                     : "LOCAL DATA SOURCES"
             }}
           </div>
-          <h2 id="modal-title">
+          <h2 id="modal-title" tabindex="-1" autofocus>
             {{
               detail
                 ? "会话详情"
