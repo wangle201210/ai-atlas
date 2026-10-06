@@ -129,6 +129,7 @@ type CleanItem struct {
 	Mtime   int64  `json:"mtime"`
 }
 type CleanPlan struct {
+	Force   bool        `json:"force"`
 	Backup  bool        `json:"backup"`
 	Token   string      `json:"token"`
 	Kind    string      `json:"kind"`

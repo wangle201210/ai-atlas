@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"log"
+	"time"
 )
 
 //go:embed all:frontend/dist
@@ -57,14 +58,19 @@ func main() {
 	app.Event.On(updater.EventVerifying, func(_ *application.CustomEvent) { updates.ReportPhase(updateService, "verifying") })
 	app.Event.On(updater.EventInstalling, func(_ *application.CustomEvent) { updates.ReportPhase(updateService, "installing") })
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "AI Atlas", Width: 1320, Height: 880, MinWidth: 800, MinHeight: 620, BackgroundColour: application.NewRGB(248, 250, 252), URL: "/"})
-	atlas.AttachPickers(service, func() (string, error) {
-		return app.Dialog.OpenFile().CanChooseDirectories(true).CanChooseFiles(false).AttachToWindow(window).PromptForSingleSelection()
-	}, func() (string, error) {
-		return app.Dialog.OpenFile().CanChooseDirectories(false).CanChooseFiles(true).AttachToWindow(window).PromptForSingleSelection()
-	})
-	atlas.AttachDiagnosticPicker(service, func() (string, error) {
-		return app.Dialog.SaveFile().SetFilename("ai-atlas-diagnostics.json").AddFilter("JSON 诊断文件", "*.json").CanCreateDirectories(true).AttachToWindow(window).PromptForSingleSelection()
-	})
+	if !application.System.IsServer() {
+		atlas.AttachPickers(service, func() (string, error) {
+			return app.Dialog.OpenFile().CanChooseDirectories(true).CanChooseFiles(false).AttachToWindow(window).PromptForSingleSelection()
+		}, func() (string, error) {
+			return app.Dialog.OpenFile().CanChooseDirectories(false).CanChooseFiles(true).AttachToWindow(window).PromptForSingleSelection()
+		})
+		atlas.AttachDiagnosticPicker(service, func() (string, error) {
+			return app.Dialog.SaveFile().SetFilename("ai-atlas-diagnostics.json").AddFilter("JSON 诊断文件", "*.json").CanCreateDirectories(true).AttachToWindow(window).PromptForSingleSelection()
+		})
+		atlas.AttachReportPicker(service, func() (string, error) {
+			return app.Dialog.SaveFile().SetFilename("ai-atlas-"+time.Now().Format("2006-01-02")+".json").AddFilter("JSON 用量报表", "*.json").CanCreateDirectories(true).AttachToWindow(window).PromptForSingleSelection()
+		})
+	}
 	if err = app.Run(); err != nil {
 		log.Print(err)
 	}

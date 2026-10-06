@@ -10,6 +10,7 @@ export interface CleanItem {
 }
 
 export interface CleanPlan {
+    "force": boolean;
     "backup": boolean;
     "token": string;
     "kind": string;

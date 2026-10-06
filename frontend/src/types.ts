@@ -103,6 +103,7 @@ export interface TempFile {
   error: string;
 }
 export interface CleanPlan {
+  force: boolean;
   backup: boolean;
   token: string;
   kind: string;

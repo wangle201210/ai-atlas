@@ -55,6 +55,10 @@ export const api = {
     const v = await (await backend()).PreviewClean(kind, ids);
     return { ...v, items: v.items ?? [] };
   },
+  forceTempPlan: async (ids: string[]): Promise<CleanPlan> => {
+    const v = await (await backend()).PreviewForceTempClean(ids);
+    return { ...v, items: v.items ?? [] };
+  },
   clean: async (token: string, text: string): Promise<CleanResult[]> =>
     (await (await backend()).ExecuteClean(token, text)) ?? [],
   archive: async (id: string, value: boolean) =>

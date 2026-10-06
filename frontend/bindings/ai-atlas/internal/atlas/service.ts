@@ -44,12 +44,27 @@ export function ExportDiagnostics(): $CancellablePromise<string> {
     return $Call.ByID(4027008562);
 }
 
+/**
+ * ExportReport saves the exact snapshot currently displayed by the frontend.
+ */
+export function ExportReport(snapshot: $models.Snapshot): $CancellablePromise<string> {
+    return $Call.ByID(275169472, snapshot);
+}
+
+export function NativeFileDialogs(): $CancellablePromise<boolean> {
+    return $Call.ByID(855975258);
+}
+
 export function Overview(since: string, until: string): $CancellablePromise<$models.Snapshot> {
     return $Call.ByID(2324921327, since, until);
 }
 
 export function PreviewClean(kind: string, ids: string[] | null): $CancellablePromise<$models.CleanPlan> {
     return $Call.ByID(3493913585, kind, ids);
+}
+
+export function PreviewForceTempClean(ids: string[] | null): $CancellablePromise<$models.CleanPlan> {
+    return $Call.ByID(4262116134, ids);
 }
 
 export function Recoveries(): $CancellablePromise<$models.Recovery[] | null> {

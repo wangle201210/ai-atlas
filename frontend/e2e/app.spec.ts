@@ -43,6 +43,7 @@ test("indexes fixtures, drills into sessions, previews without deleting, filters
   await expect(
     page.getByRole("button", { name: "执行清理", exact: true }),
   ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "关闭对话框", exact: true })).toBeEnabled();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "存储空间", exact: true }).click();
@@ -84,6 +85,7 @@ test("small viewport remains usable and settings can be dismissed by keyboard", 
     .getByRole("button", { name: "数据源与统计口径", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("button", { name: "关闭对话框", exact: true })).toBeEnabled();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).not.toBeVisible();
 });

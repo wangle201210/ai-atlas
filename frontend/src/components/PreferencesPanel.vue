@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import { FolderOpen, RefreshCw, Download, ExternalLink } from "lucide-vue-next";
+import { exportDiagnostics } from "../file-export";
 import { Browser } from "@wailsio/runtime";
 import type {
   Settings,
@@ -19,6 +20,7 @@ const exportNotice = ref("");
 let exportNoticeTimer: ReturnType<typeof setTimeout> | undefined;
 onUnmounted(() => clearTimeout(exportNoticeTimer));
 async function run(fn: () => Promise<void>) {
+  if (busy.value) return;
   busy.value = true;
   error.value = "";
   try {
@@ -28,6 +30,11 @@ async function run(fn: () => Promise<void>) {
   } finally {
     busy.value = false;
   }
+}
+async function feedback() {
+  await run(() =>
+    Browser.OpenURL("https://github.com/wangle201210/ai-atlas/issues"),
+  );
 }
 async function inspect() {
   await run(async () => {
@@ -60,9 +67,9 @@ async function diagnostics() {
   clearTimeout(exportNoticeTimer);
   exportNotice.value = "";
   await run(async () => {
-    const path = await (await backend()).ExportDiagnostics();
-    if (path) {
-      exportNotice.value = `诊断已保存至：${path}`;
+    const message = await exportDiagnostics();
+    if (message) {
+      exportNotice.value = message;
       exportNoticeTimer = setTimeout(() => (exportNotice.value = ""), 10000);
     }
   });
@@ -113,7 +120,8 @@ onMounted(() =>
       </div>
       <p class="muted cli-path" aria-live="polite">
         当前生效路径（已保存配置）：<code>{{
-          environment?.cliPath || (environment ? "未找到 Codex CLI" : "正在检测…")
+          environment?.cliPath ||
+          (environment ? "未找到 Codex CLI" : "正在检测…")
         }}</code>
       </p>
       <div v-if="environment" class="environment-result">
@@ -164,12 +172,7 @@ onMounted(() =>
     <div class="diagnostic-actions">
       <button class="button secondary" :disabled="busy" @click="diagnostics">
         <Download :size="15" />导出脱敏诊断</button
-      ><button
-        class="text-button"
-        @click="
-          Browser.OpenURL('https://github.com/wangle201210/ai-atlas/issues')
-        "
-      >
+      ><button class="text-button" @click="feedback">
         <ExternalLink :size="14" />反馈问题
       </button>
     </div>

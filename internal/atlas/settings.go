@@ -255,18 +255,44 @@ func (s *Service) ExportDiagnostics() (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	// Write beside the destination, then replace only after the complete file is closed.
-	f, err := os.CreateTemp(filepath.Dir(path), ".ai-atlas-diagnostics-*")
+	return saveExport(path, raw)
+}
+
+func (s *Service) NativeFileDialogs() bool { return s.pickReportFile != nil }
+
+func AttachReportPicker(s *Service, picker func() (string, error)) {
+	s.pickReportFile = picker
+}
+
+// ExportReport saves the exact snapshot currently displayed by the frontend.
+func (s *Service) ExportReport(snapshot Snapshot) (string, error) {
+	if s.pickReportFile == nil {
+		return "", errors.New("当前运行方式不支持系统保存窗口")
+	}
+	raw, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("保存诊断失败: %w", err)
+		return "", err
+	}
+	path, err := s.pickReportFile()
+	if err != nil || path == "" {
+		return "", err
+	}
+	return saveExport(path, string(raw))
+}
+
+func saveExport(path, raw string) (string, error) {
+	// Write beside the destination, then replace only after the complete file is closed.
+	f, err := os.CreateTemp(filepath.Dir(path), ".ai-atlas-export-*")
+	if err != nil {
+		return "", fmt.Errorf("保存文件失败: %w", err)
 	}
 	defer os.Remove(f.Name())
 	_, writeErr := f.WriteString(raw + "\n")
 	if err = errors.Join(writeErr, f.Close()); err != nil {
-		return "", fmt.Errorf("保存诊断失败: %w", err)
+		return "", fmt.Errorf("保存文件失败: %w", err)
 	}
 	if err = os.Rename(f.Name(), path); err != nil {
-		return "", fmt.Errorf("保存诊断失败: %w", err)
+		return "", fmt.Errorf("保存文件失败: %w", err)
 	}
 	return path, nil
 }

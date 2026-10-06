@@ -58,3 +58,37 @@ func TestExportDiagnostics(t *testing.T) {
 		t.Fatal("existing diagnostic was changed")
 	}
 }
+
+func TestExportReportSnapshotAndCancel(t *testing.T) {
+	s := testService(t)
+	snapshot := Snapshot{Sessions: 3, Usage: Usage{Total: 42}, Home: "/demo/codex"}
+	if _, err := s.ExportReport(snapshot); err == nil {
+		t.Fatal("missing dialog must fail")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.json")
+	AttachReportPicker(s, func() (string, error) { return path, nil })
+	saved, err := s.ExportReport(snapshot)
+	if err != nil || saved != path {
+		t.Fatalf("save: %q %v", saved, err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Snapshot
+	if err = json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Sessions != 3 || got.Usage.Total != 42 || got.Home != snapshot.Home {
+		t.Fatal("displayed snapshot not preserved")
+	}
+	AttachReportPicker(s, func() (string, error) { return "", nil })
+	if saved, err = s.ExportReport(Snapshot{}); saved != "" || err != nil {
+		t.Fatal("cancel should be silent")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(raw) {
+		t.Fatal("cancel modified file")
+	}
+}

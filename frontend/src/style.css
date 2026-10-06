@@ -1404,3 +1404,17 @@ td:has(input[type="checkbox"]) {
   flex: 1;
   min-width: 190px;
 }
+
+.initial-loading {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: var(--muted);
+}
+.initial-loading h2,
+.initial-loading p {
+  margin: 0;
+}

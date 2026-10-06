@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-vue-next";
 import { Clipboard } from "@wailsio/runtime";
+import { exportReport } from "./file-export";
 import { api } from "./api";
 import { rememberedChoice } from "./preferences";
 import appIcon from "./assets/token-signal.svg";
@@ -58,13 +59,19 @@ const tab = ref("overview"),
     errors: [],
     finished: "",
   });
+const initialLoading = ref(true),
+  initialized = ref(false);
 const busy = ref(false),
   error = ref(""),
   notice = ref(""),
   search = ref(""),
   project = ref(""),
   state = ref("all"),
-  sort = rememberedChoice("session-sort", ["updated", "size", "tokens"], "updated"),
+  sort = rememberedChoice(
+    "session-sort",
+    ["updated", "size", "tokens"],
+    "updated",
+  ),
   page = ref(0),
   since = ref(""),
   until = ref("");
@@ -236,7 +243,7 @@ async function retryScan() {
   });
 }
 async function tick() {
-  if (polling) return;
+  if (polling || !initialized.value) return;
   polling = true;
   try {
     const old = status.value.running;
@@ -317,6 +324,16 @@ async function preview() {
     results.value = [];
   });
 }
+async function setForceCleanup(event: Event) {
+  if (!plan.value || busy.value) return;
+  const force = (event.target as HTMLInputElement).checked;
+  const ids = plan.value.items.map(item => item.id);
+  confirmation.value = "";
+  await perform(async () => {
+    plan.value = force ? await api.forceTempPlan(ids) : await api.plan("temp", ids);
+  });
+  (event.target as HTMLInputElement).checked = !!plan.value?.force;
+}
 async function execute() {
   if (!plan.value) return;
   await perform(async () => {
@@ -362,18 +379,14 @@ function closeModal() {
   settings.value = false;
   results.value = [];
 }
-function downloadReport() {
-  if (!data.value) return;
-  const blob = new Blob([JSON.stringify(data.value, null, 2)], {
-      type: "application/json",
-    }),
-    url = URL.createObjectURL(blob),
-    a = document.createElement("a");
-  a.href = url;
-  a.download = `ai-atlas-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showNotice("已导出项目用量报表");
+async function downloadReport() {
+  if (!data.value || busy.value) return;
+  const snapshot = data.value;
+  clearNotice();
+  await perform(async () => {
+    const message = await exportReport(snapshot);
+    if (message) showNotice(message);
+  });
 }
 watch(modalOpen, async (open) => {
   await nextTick();
@@ -399,11 +412,17 @@ watch(tempFilter, () => {
   selected.value = [];
 });
 watch([since, until], () => void perform(loadOverview));
-onMounted(() => {
-  void perform(async () => {
+async function initialize() {
+  initialLoading.value = true;
+  await perform(async () => {
     await refresh();
     status.value = await api.status();
+    initialized.value = true;
   });
+  initialLoading.value = false;
+}
+onMounted(() => {
+  void initialize();
   poll = setInterval(tick, 1200);
 });
 onUnmounted(() => {
@@ -483,9 +502,6 @@ onUnmounted(() => {
             <X :size="16" />
           </button>
         </div>
-        <div v-if="busy && !data" class="banner info" role="status">
-          正在读取本地索引，请稍候…
-        </div>
         <div v-if="status.running" class="scan-progress" role="status">
           <div>
             <RefreshCw :size="15" class="spinning" />{{ status.phase
@@ -556,7 +572,7 @@ onUnmounted(() => {
           <button
             v-if="tab === 'overview'"
             class="button secondary"
-            :disabled="!data?.sessions"
+            :disabled="!initialized || busy || !data?.sessions"
             @click="downloadReport"
           >
             <ArrowDownToLine :size="16" />导出报表</button
@@ -570,571 +586,602 @@ onUnmounted(() => {
           </button>
         </section>
 
-        <template v-if="tab === 'overview'">
-          <div v-if="data?.sessions" class="quality-summary">
-            统计完整性：完整 {{ data.completeSessions }} · 部分
-            {{ data.partialSessions }} · 无用量记录
-            {{ data.noUsageSessions }}。部分记录的原因可在会话详情查看。
-          </div>
-          <div class="date-filter">
-            <span>用量时间范围</span
-            ><label
-              >开始<input
-                type="date"
-                v-model="since"
-                aria-label="开始日期" /></label
-            ><span>—</span
-            ><label
-              >结束<input
-                type="date"
-                v-model="until"
-                aria-label="结束日期" /></label
-            ><button
-              class="text-button"
-              @click="
-                since = '';
-                until = '';
-              "
-            >
-              全部时间</button
-            ><small>会话数和存储显示当前全量</small>
-          </div>
-          <section v-if="data" class="stats-grid" aria-label="用量摘要">
-            <article class="stat-card">
-              <div><span>总 Token 用量</span><Activity :size="18" /></div>
-              <strong :title="number(data?.usage.total)">{{
-                count(data?.usage.total)
-              }}</strong
-              ><small
-                >输入 {{ count(data?.usage.input)
-                }}<span>输出 {{ count(data?.usage.output) }}</span></small
-              >
-            </article>
-            <article class="stat-card">
-              <div><span>缓存命中占比</span><Database :size="18" /></div>
-              <strong>{{ cacheRatio }}<em>%</em></strong
-              ><small
-                >{{ count(data?.usage.cached) }} 缓存输入<span
-                  >已包含在输入中</span
-                ></small
-              >
-            </article>
-            <article class="stat-card">
-              <div><span>已索引会话</span><FileText :size="18" /></div>
-              <strong>{{ number(data?.sessions) }}</strong
-              ><small
-                >分布在 {{ data?.projects.length || 0 }} 个目录<span
-                  >包含保留统计</span
-                ></small
-              >
-            </article>
-            <article class="stat-card">
-              <div><span>已索引会话日志</span><HardDrive :size="18" /></div>
-              <strong
-                >{{ bytes(data?.bytes).split(" ")[0]
-                }}<em>{{ bytes(data?.bytes).split(" ")[1] }}</em></strong
-              ><small>不含缓存与临时文件<span>逻辑文件大小</span></small>
-            </article>
-          </section>
-          <div v-if="data && !data.sessions" class="empty-state panel">
-            <FolderSearch :size="38" />
-            <h2>先给你的工作空间画张地图</h2>
-            <p>
-              扫描本机 Codex
-              会话，建立项目、用量和存储索引。首次扫描可能需要一些时间。
-            </p>
-            <button
-              class="button primary"
-              :disabled="status.running || busy"
-              @click="scan(false)"
-            >
-              开始扫描</button
-            ><button class="button secondary" @click="settings = true">
-              设置数据源
-            </button>
-          </div>
-          <template v-else-if="data"
-            ><section class="panel chart-panel">
-              <div class="panel-heading">
-                <div>
-                  <h2>用量趋势</h2>
-                  <p>所选范围内最近 30 个有记录的日期 · Token</p>
-                </div>
-                <span class="legend"><i></i>输入 + 输出</span>
-              </div>
-              <div
-                class="bar-chart"
-                role="img"
-                :aria-label="
-                  '最近 ' + data.days.length + ' 个有记录日期的 Token 用量'
+        <section
+          v-if="initialLoading"
+          class="panel initial-loading"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <RefreshCw :size="30" class="spinning" />
+          <h2>正在读取本地索引</h2>
+          <p>正在加载项目用量、会话和存储统计，请稍候…</p>
+        </section>
+        <section v-else-if="!initialized" class="panel initial-loading">
+          <h2>数据加载失败</h2>
+          <p>请检查数据目录是否可访问，然后重试。</p>
+          <button class="button primary" @click="initialize">重新加载</button>
+        </section>
+        <template v-else>
+          <template v-if="tab === 'overview'">
+            <div v-if="data?.sessions" class="quality-summary">
+              统计完整性：完整 {{ data.completeSessions }} · 部分
+              {{ data.partialSessions }} · 无用量记录
+              {{ data.noUsageSessions }}。部分记录的原因可在会话详情查看。
+            </div>
+            <div class="date-filter">
+              <span>用量时间范围</span
+              ><label
+                >开始<input
+                  type="date"
+                  v-model="since"
+                  aria-label="开始日期" /></label
+              ><span>—</span
+              ><label
+                >结束<input
+                  type="date"
+                  v-model="until"
+                  aria-label="结束日期" /></label
+              ><button
+                class="text-button"
+                @click="
+                  since = '';
+                  until = '';
                 "
               >
-                <div
-                  v-for="day in data.days"
-                  :key="day.date"
-                  class="chart-column"
+                全部时间</button
+              ><small>会话数和存储显示当前全量</small>
+            </div>
+            <section v-if="data" class="stats-grid" aria-label="用量摘要">
+              <article class="stat-card">
+                <div><span>总 Token 用量</span><Activity :size="18" /></div>
+                <strong :title="number(data?.usage.total)">{{
+                  count(data?.usage.total)
+                }}</strong
+                ><small
+                  >输入 {{ count(data?.usage.input)
+                  }}<span>输出 {{ count(data?.usage.output) }}</span></small
                 >
-                  <div class="chart-track">
-                    <button
-                      class="chart-bar"
-                      :style="{
-                        height: Math.max(2, (day.total / maxDay) * 100) + '%',
-                      }"
-                      :aria-label="
-                        day.date + '：' + number(day.total) + ' token'
-                      "
-                      :title="day.date + ' · ' + number(day.total) + ' tokens'"
-                    ></button>
-                  </div>
-                  <span>{{ day.date.slice(5) }}</span>
-                </div>
-                <div v-if="!data.days.length" class="muted">
-                  该时间范围没有用量记录
-                </div>
-              </div>
+              </article>
+              <article class="stat-card">
+                <div><span>缓存命中占比</span><Database :size="18" /></div>
+                <strong>{{ cacheRatio }}<em>%</em></strong
+                ><small
+                  >{{ count(data?.usage.cached) }} 缓存输入<span
+                    >已包含在输入中</span
+                  ></small
+                >
+              </article>
+              <article class="stat-card">
+                <div><span>已索引会话</span><FileText :size="18" /></div>
+                <strong>{{ number(data?.sessions) }}</strong
+                ><small
+                  >分布在 {{ data?.projects.length || 0 }} 个目录<span
+                    >包含保留统计</span
+                  ></small
+                >
+              </article>
+              <article class="stat-card">
+                <div><span>已索引会话日志</span><HardDrive :size="18" /></div>
+                <strong
+                  >{{ bytes(data?.bytes).split(" ")[0]
+                  }}<em>{{ bytes(data?.bytes).split(" ")[1] }}</em></strong
+                ><small>不含缓存与临时文件<span>逻辑文件大小</span></small>
+              </article>
             </section>
+            <div v-if="data && !data.sessions" class="empty-state panel">
+              <FolderSearch :size="38" />
+              <h2>先给你的工作空间画张地图</h2>
+              <p>
+                扫描本机 Codex
+                会话，建立项目、用量和存储索引。首次扫描可能需要一些时间。
+              </p>
+              <button
+                class="button primary"
+                :disabled="status.running || busy"
+                @click="scan(false)"
+              >
+                开始扫描</button
+              ><button class="button secondary" @click="settings = true">
+                设置数据源
+              </button>
+            </div>
+            <template v-else-if="data"
+              ><section class="panel chart-panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>用量趋势</h2>
+                    <p>所选范围内最近 30 个有记录的日期 · Token</p>
+                  </div>
+                  <span class="legend"><i></i>输入 + 输出</span>
+                </div>
+                <div
+                  class="bar-chart"
+                  role="img"
+                  :aria-label="
+                    '最近 ' + data.days.length + ' 个有记录日期的 Token 用量'
+                  "
+                >
+                  <div
+                    v-for="day in data.days"
+                    :key="day.date"
+                    class="chart-column"
+                  >
+                    <div class="chart-track">
+                      <button
+                        class="chart-bar"
+                        :style="{
+                          height: Math.max(2, (day.total / maxDay) * 100) + '%',
+                        }"
+                        :aria-label="
+                          day.date + '：' + number(day.total) + ' token'
+                        "
+                        :title="
+                          day.date + ' · ' + number(day.total) + ' tokens'
+                        "
+                      ></button>
+                    </div>
+                    <span>{{ day.date.slice(5) }}</span>
+                  </div>
+                  <div v-if="!data.days.length" class="muted">
+                    该时间范围没有用量记录
+                  </div>
+                </div>
+              </section>
+              <section class="panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>
+                      项目分布
+                      <span class="count-pill">{{ projects.length }}</span>
+                    </h2>
+                    <p>按工作目录归类，点击项目查看会话</p>
+                  </div>
+                  <div class="inline-controls">
+                    <label class="search-box"
+                      ><Search :size="16" /><input
+                        v-model="search"
+                        placeholder="搜索项目目录"
+                        aria-label="搜索项目目录" /></label
+                    ><select v-model="projectSort" aria-label="项目排序">
+                      <option value="tokens">按 Token 排序</option>
+                      <option value="bytes">按空间排序</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>项目 / 工作目录</th>
+                        <th class="numeric">关联会话</th>
+                        <th class="numeric">输入 / 缓存</th>
+                        <th class="numeric">输出</th>
+                        <th class="numeric">总 Token</th>
+                        <th class="numeric">日志体积</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="p in projects" :key="p.path">
+                        <td>
+                          <button
+                            class="project-link"
+                            @click="showProject(p.path)"
+                          >
+                            <span class="folder-icon"
+                              ><Folder :size="20" /></span
+                            ><span
+                              ><strong>{{ p.name }}</strong
+                              ><small :title="p.path">{{ p.path }}</small></span
+                            >
+                          </button>
+                        </td>
+                        <td class="numeric">{{ p.sessions }}</td>
+                        <td class="numeric">
+                          {{ count(p.usage.input)
+                          }}<small>缓存 {{ count(p.usage.cached) }}</small>
+                        </td>
+                        <td class="numeric">{{ count(p.usage.output) }}</td>
+                        <td class="numeric token-cell">
+                          {{ count(p.usage.total) }}
+                          <div class="mini-track">
+                            <i
+                              :style="{
+                                width:
+                                  (p.usage.total /
+                                    (projects[0]?.usage.total || 1)) *
+                                    100 +
+                                  '%',
+                              }"
+                            ></i>
+                          </div>
+                        </td>
+                        <td class="numeric">{{ bytes(p.bytes) }}</td>
+                        <td>
+                          <button
+                            class="icon-button"
+                            :aria-label="'查看 ' + p.name + ' 会话'"
+                            @click="showProject(p.path)"
+                          >
+                            <ChevronRight :size="18" />
+                          </button>
+                        </td>
+                      </tr>
+                      <tr v-if="!projects.length">
+                        <td colspan="7" class="empty-cell">没有匹配的项目</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section></template
+            >
+            <p class="footnote">
+              <ShieldCheck
+                :size="15"
+              />本地日志统计，不代表订阅剩余额度或账单。推理 Token
+              已包含在输出中。
+            </p>
+          </template>
+
+          <template v-if="tab === 'sessions'">
             <section class="panel">
-              <div class="panel-heading">
-                <div>
-                  <h2>
-                    项目分布
-                    <span class="count-pill">{{ projects.length }}</span>
-                  </h2>
-                  <p>按工作目录归类，点击项目查看会话</p>
-                </div>
-                <div class="inline-controls">
-                  <label class="search-box"
-                    ><Search :size="16" /><input
-                      v-model="search"
-                      placeholder="搜索项目目录"
-                      aria-label="搜索项目目录" /></label
-                  ><select v-model="projectSort" aria-label="项目排序">
-                    <option value="tokens">按 Token 排序</option>
-                    <option value="bytes">按空间排序</option>
-                  </select>
-                </div>
+              <div class="filter-bar">
+                <label class="search-box grow"
+                  ><Search :size="17" /><input
+                    v-model="search"
+                    placeholder="搜索会话标题、目录或 ID"
+                    aria-label="搜索会话" /></label
+                ><select v-model="project" aria-label="筛选项目">
+                  <option value="">全部项目</option>
+                  <option
+                    v-for="p in data?.projects"
+                    :key="p.path"
+                    :value="p.path"
+                  >
+                    {{ p.name }} · {{ p.path }}
+                  </option></select
+                ><select v-model="state" aria-label="会话状态">
+                  <option value="all">全部状态</option>
+                  <option value="active">未归档</option>
+                  <option value="archived">已归档</option>
+                  <option value="missing">仅保留统计</option></select
+                ><select v-model="sort" aria-label="会话排序">
+                  <option value="updated">最近活动</option>
+                  <option value="size">体积最大</option>
+                  <option value="tokens">用量最高</option>
+                </select>
+              </div>
+              <div class="selection-bar">
+                <span
+                  >共 {{ number(sessions.total) }} 个会话
+                  <b v-if="selected.length"
+                    >· 已选 {{ selected.length }} 项</b
+                  ></span
+                ><button
+                  class="button danger-outline"
+                  :disabled="!selected.length || busy || status.running"
+                  @click="preview"
+                >
+                  <Trash2 :size="15" />预览清理
+                </button>
               </div>
               <div class="table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th>项目 / 工作目录</th>
-                      <th class="numeric">关联会话</th>
-                      <th class="numeric">输入 / 缓存</th>
-                      <th class="numeric">输出</th>
-                      <th class="numeric">总 Token</th>
-                      <th class="numeric">日志体积</th>
-                      <th></th>
+                      <th class="check-cell">
+                        <input
+                          type="checkbox"
+                          :checked="
+                            sessions.items.filter((v) => !v.missing).length >
+                              0 &&
+                            sessions.items
+                              .filter((v) => !v.missing)
+                              .every((v) => selected.includes(v.id))
+                          "
+                          aria-label="选择当前页"
+                          @change="togglePage"
+                        />
+                      </th>
+                      <th>会话</th>
+                      <th>项目 / 模型</th>
+                      <th class="numeric">Token</th>
+                      <th class="numeric">日志大小</th>
+                      <th>最近活动</th>
+                      <th>状态</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="p in projects" :key="p.path">
+                    <tr v-for="v in sessions.items" :key="v.id">
                       <td>
-                        <button
-                          class="project-link"
-                          @click="showProject(p.path)"
-                        >
-                          <span class="folder-icon"><Folder :size="20" /></span
-                          ><span
-                            ><strong>{{ p.name }}</strong
-                            ><small :title="p.path">{{ p.path }}</small></span
-                          >
-                        </button>
+                        <input
+                          type="checkbox"
+                          :checked="selected.includes(v.id)"
+                          :disabled="v.missing"
+                          :aria-label="'选择 ' + v.title"
+                          @change="toggle(v.id)"
+                        />
                       </td>
-                      <td class="numeric">{{ p.sessions }}</td>
+                      <td class="session-title">
+                        <button @click="openDetail(v)">{{ v.title }}</button
+                        ><small class="mono">{{ v.id.slice(0, 18) }}…</small>
+                      </td>
+                      <td>
+                        <span :title="v.project">{{ basename(v.project) }}</span
+                        ><small>{{ v.model || "模型未知" }}</small>
+                      </td>
                       <td class="numeric">
-                        {{ count(p.usage.input)
-                        }}<small>缓存 {{ count(p.usage.cached) }}</small>
-                      </td>
-                      <td class="numeric">{{ count(p.usage.output) }}</td>
-                      <td class="numeric token-cell">
-                        {{ count(p.usage.total) }}
-                        <div class="mini-track">
-                          <i
-                            :style="{
-                              width:
-                                (p.usage.total /
-                                  (projects[0]?.usage.total || 1)) *
-                                  100 +
-                                '%',
-                            }"
-                          ></i>
-                        </div>
-                      </td>
-                      <td class="numeric">{{ bytes(p.bytes) }}</td>
-                      <td>
-                        <button
-                          class="icon-button"
-                          :aria-label="'查看 ' + p.name + ' 会话'"
-                          @click="showProject(p.path)"
+                        {{ v.hasUsage ? count(v.usage.total) : "无记录"
+                        }}<small v-if="v.completeness === 'partial'"
+                          >部分统计</small
                         >
-                          <ChevronRight :size="18" />
-                        </button>
+                      </td>
+                      <td class="numeric">
+                        {{ v.missing ? "—" : bytes(v.size) }}
+                      </td>
+                      <td class="nowrap muted">{{ date(v.updated) }}</td>
+                      <td>
+                        <span
+                          class="badge"
+                          :class="
+                            v.missing
+                              ? 'neutral'
+                              : v.archived
+                                ? 'amber'
+                                : 'blue'
+                          "
+                          >{{
+                            v.missing
+                              ? "仅统计"
+                              : v.archived
+                                ? "已归档"
+                                : "未归档"
+                          }}</span
+                        >
                       </td>
                     </tr>
-                    <tr v-if="!projects.length">
-                      <td colspan="7" class="empty-cell">没有匹配的项目</td>
+                    <tr v-if="!sessions.items.length">
+                      <td colspan="7" class="empty-cell">
+                        没有匹配的会话。可以调整筛选或刷新索引。
+                      </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-            </section></template
-          >
-          <p class="footnote">
-            <ShieldCheck
-              :size="15"
-            />本地日志统计，不代表订阅剩余额度或账单。推理 Token
-            已包含在输出中。
-          </p>
-        </template>
+            </section>
+          </template>
 
-        <template v-if="tab === 'sessions'">
-          <section class="panel">
-            <div class="filter-bar">
-              <label class="search-box grow"
-                ><Search :size="17" /><input
-                  v-model="search"
-                  placeholder="搜索会话标题、目录或 ID"
-                  aria-label="搜索会话" /></label
-              ><select v-model="project" aria-label="筛选项目">
-                <option value="">全部项目</option>
-                <option
-                  v-for="p in data?.projects"
-                  :key="p.path"
-                  :value="p.path"
-                >
-                  {{ p.name }} · {{ p.path }}
-                </option></select
-              ><select v-model="state" aria-label="会话状态">
-                <option value="all">全部状态</option>
-                <option value="active">未归档</option>
-                <option value="archived">已归档</option>
-                <option value="missing">仅保留统计</option></select
-              ><select v-model="sort" aria-label="会话排序">
-                <option value="updated">最近活动</option>
-                <option value="size">体积最大</option>
-                <option value="tokens">用量最高</option>
-              </select>
-            </div>
-            <div class="selection-bar">
-              <span
-                >共 {{ number(sessions.total) }} 个会话
-                <b v-if="selected.length"
-                  >· 已选 {{ selected.length }} 项</b
-                ></span
-              ><button
-                class="button danger-outline"
-                :disabled="!selected.length || busy || status.running"
-                @click="preview"
-              >
-                <Trash2 :size="15" />预览清理
-              </button>
-            </div>
-            <div class="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th class="check-cell">
-                      <input
-                        type="checkbox"
-                        :checked="
-                          sessions.items.filter((v) => !v.missing).length > 0 &&
-                          sessions.items
-                            .filter((v) => !v.missing)
-                            .every((v) => selected.includes(v.id))
-                        "
-                        aria-label="选择当前页"
-                        @change="togglePage"
-                      />
-                    </th>
-                    <th>会话</th>
-                    <th>项目 / 模型</th>
-                    <th class="numeric">Token</th>
-                    <th class="numeric">日志大小</th>
-                    <th>最近活动</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="v in sessions.items" :key="v.id">
-                    <td>
-                      <input
-                        type="checkbox"
-                        :checked="selected.includes(v.id)"
-                        :disabled="v.missing"
-                        :aria-label="'选择 ' + v.title"
-                        @change="toggle(v.id)"
-                      />
-                    </td>
-                    <td class="session-title">
-                      <button @click="openDetail(v)">{{ v.title }}</button
-                      ><small class="mono">{{ v.id.slice(0, 18) }}…</small>
-                    </td>
-                    <td>
-                      <span :title="v.project">{{ basename(v.project) }}</span
-                      ><small>{{ v.model || "模型未知" }}</small>
-                    </td>
-                    <td class="numeric">
-                      {{ v.hasUsage ? count(v.usage.total) : "无记录"
-                      }}<small v-if="v.completeness === 'partial'"
-                        >部分统计</small
-                      >
-                    </td>
-                    <td class="numeric">
-                      {{ v.missing ? "—" : bytes(v.size) }}
-                    </td>
-                    <td class="nowrap muted">{{ date(v.updated) }}</td>
-                    <td>
-                      <span
-                        class="badge"
-                        :class="
-                          v.missing ? 'neutral' : v.archived ? 'amber' : 'blue'
-                        "
-                        >{{
-                          v.missing
-                            ? "仅统计"
-                            : v.archived
-                              ? "已归档"
-                              : "未归档"
-                        }}</span
-                      >
-                    </td>
-                  </tr>
-                  <tr v-if="!sessions.items.length">
-                    <td colspan="7" class="empty-cell">
-                      没有匹配的会话。可以调整筛选或刷新索引。
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </template>
-
-        <template v-if="tab === 'storage'">
-          <section class="storage-hero">
-            <div class="storage-symbol"><HardDrive :size="36" /></div>
-            <div>
-              <span>CODEX HOME · 目录占用</span>
-              <h2>{{ bytes(storageTotal) }}</h2>
-              <p class="mono">{{ data?.home }}</p>
-            </div>
-            <div class="storage-insight">
-              <strong
-                >{{
-                  storageTotal
-                    ? Math.round(((data?.bytes || 0) / storageTotal) * 100)
-                    : 0
-                }}%</strong
-              ><span>空间来自会话日志</span
-              ><button
-                class="text-button"
-                @click="
-                  navigate('sessions');
-                  sort = 'size';
-                "
-              >
-                查看大体积会话 <ArrowRight :size="15" />
-              </button>
-            </div>
-          </section>
-          <section class="panel">
-            <div class="panel-heading">
+          <template v-if="tab === 'storage'">
+            <section class="storage-hero">
+              <div class="storage-symbol"><HardDrive :size="36" /></div>
               <div>
-                <h2>目录占用</h2>
-                <p>逻辑文件大小；符号链接不跟随，实际可释放空间可能不同</p>
+                <span>CODEX HOME · 目录占用</span>
+                <h2>{{ bytes(storageTotal) }}</h2>
+                <p class="mono">{{ data?.home }}</p>
               </div>
-            </div>
-            <div
-              v-for="(v, i) in data?.storage"
-              :key="v.path"
-              class="storage-row"
-            >
-              <div class="storage-row-title">
-                <Folder :size="19" /><span
-                  ><strong>{{ basename(v.path) }}</strong
-                  ><small v-if="v.error" class="error-text"
-                    >扫描不完整：{{ v.error }}</small
-                  ></span
+              <div class="storage-insight">
+                <strong
+                  >{{
+                    storageTotal
+                      ? Math.round(((data?.bytes || 0) / storageTotal) * 100)
+                      : 0
+                  }}%</strong
+                ><span>空间来自会话日志</span
+                ><button
+                  class="text-button"
+                  @click="
+                    navigate('sessions');
+                    sort = 'size';
+                  "
                 >
+                  查看大体积会话 <ArrowRight :size="15" />
+                </button>
               </div>
-              <div class="storage-track">
-                <i
-                  :style="{
-                    width:
-                      Math.max(0.3, (v.bytes / (storageTotal || 1)) * 100) +
-                      '%',
-                    background: ['#4361ee', '#8b6fd3', '#19a7a0', '#d49a32'][
-                      i % 4
-                    ],
-                  }"
-                ></i>
+            </section>
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>目录占用</h2>
+                  <p>逻辑文件大小；符号链接不跟随，实际可释放空间可能不同</p>
+                </div>
               </div>
-              <strong>{{ bytes(v.bytes) }}</strong>
-            </div>
-            <div v-if="!data?.storage.length" class="empty-cell">
-              刷新索引后显示存储占用
-            </div>
-          </section>
-          <div class="info-grid">
-            <article class="panel tip-card">
-              <Archive :size="23" />
-              <h3>归档整理列表，删除释放空间</h3>
-              <p>
-                归档仍保留会话日志。清理会话前，Atlas 保留已索引的用量数据。
-              </p>
-            </article>
-            <article class="panel tip-card">
-              <FolderSearch :size="23" />
-              <h3>临时文件单独追溯</h3>
-              <p>临时产物可能位于系统目录，不包含在上方 Codex Home 总量中。</p>
-              <button class="text-button" @click="navigate('temps')">
-                查看临时文件 <ArrowRight :size="15" />
-              </button>
-            </article>
-          </div>
-        </template>
-
-        <template v-if="tab === 'temps'">
-          <div class="banner info persistent">
-            <ShieldCheck :size="18" /><span
-              >临时文件与会话日志分别统计，系统临时目录还可能包含其他应用文件。路径引用不等于创建证明。未知归属、被占用或最近
-              24 小时修改的文件不会进入清理。</span
-            >
-          </div>
-          <section class="panel">
-            <div class="filter-bar">
-              <label class="search-box grow"
-                ><Search :size="17" /><input
-                  v-model="search"
-                  placeholder="搜索临时路径或关联项目"
-                  aria-label="搜索临时文件" /></label
-              ><select v-model="tempFilter" aria-label="归属筛选">
-                <option value="all">全部文件</option>
-                <option value="linked">有引用线索</option>
-                <option value="unknown">归属未知</option>
-              </select>
-            </div>
-            <div class="selection-bar">
-              <span
-                >{{ number(filteredTemps.length) }} 项 ·
-                {{ bytes(filteredTemps.reduce((a, b) => a + b.bytes, 0)) }}
-                <b v-if="selected.length"
-                  >· 已选 {{ selected.length }} 项</b
-                ></span
-              ><button
-                class="button danger-outline"
-                :disabled="!selected.length || busy || status.running"
-                @click="preview"
+              <div
+                v-for="(v, i) in data?.storage"
+                :key="v.path"
+                class="storage-row"
               >
-                <Trash2 :size="15" />预览移入废纸篓
+                <div class="storage-row-title">
+                  <Folder :size="19" /><span
+                    ><strong>{{ basename(v.path) }}</strong
+                    ><small v-if="v.error" class="error-text"
+                      >扫描不完整：{{ v.error }}</small
+                    ></span
+                  >
+                </div>
+                <div class="storage-track">
+                  <i
+                    :style="{
+                      width:
+                        Math.max(0.3, (v.bytes / (storageTotal || 1)) * 100) +
+                        '%',
+                      background: ['#4361ee', '#8b6fd3', '#19a7a0', '#d49a32'][
+                        i % 4
+                      ],
+                    }"
+                  ></i>
+                </div>
+                <strong>{{ bytes(v.bytes) }}</strong>
+              </div>
+              <div v-if="!data?.storage.length" class="empty-cell">
+                刷新索引后显示存储占用
+              </div>
+            </section>
+            <div class="info-grid">
+              <article class="panel tip-card">
+                <Archive :size="23" />
+                <h3>归档整理列表，删除释放空间</h3>
+                <p>
+                  归档仍保留会话日志。清理会话前，Atlas 保留已索引的用量数据。
+                </p>
+              </article>
+              <article class="panel tip-card">
+                <FolderSearch :size="23" />
+                <h3>临时文件单独追溯</h3>
+                <p>
+                  临时产物可能位于系统目录，不包含在上方 Codex Home 总量中。
+                </p>
+                <button class="text-button" @click="navigate('temps')">
+                  查看临时文件 <ArrowRight :size="15" />
+                </button>
+              </article>
+            </div>
+          </template>
+
+          <template v-if="tab === 'temps'">
+            <div class="banner info persistent">
+              <ShieldCheck :size="18" /><span
+                >临时文件与会话日志分别统计，系统临时目录还可能包含其他应用文件。路径引用不等于创建证明。未知归属、被占用或最近
+                24 小时修改的文件不会进入清理。</span
+              >
+            </div>
+            <section class="panel">
+              <div class="filter-bar">
+                <label class="search-box grow"
+                  ><Search :size="17" /><input
+                    v-model="search"
+                    placeholder="搜索临时路径或关联项目"
+                    aria-label="搜索临时文件" /></label
+                ><select v-model="tempFilter" aria-label="归属筛选">
+                  <option value="all">全部文件</option>
+                  <option value="linked">有引用线索</option>
+                  <option value="unknown">归属未知</option>
+                </select>
+              </div>
+              <div class="selection-bar">
+                <span
+                  >{{ number(filteredTemps.length) }} 项 ·
+                  {{ bytes(filteredTemps.reduce((a, b) => a + b.bytes, 0)) }}
+                  <b v-if="selected.length"
+                    >· 已选 {{ selected.length }} 项</b
+                  ></span
+                ><button
+                  class="button danger-outline"
+                  :disabled="!selected.length || busy || status.running"
+                  @click="preview"
+                >
+                  <Trash2 :size="15" />预览移入废纸篓
+                </button>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th class="check-cell">
+                        <input
+                          type="checkbox"
+                          :checked="
+                            visibleTemps.length > 0 &&
+                            visibleTemps.every((v) => selected.includes(v.path))
+                          "
+                          aria-label="选择当前页临时文件"
+                          @change="togglePage"
+                        />
+                      </th>
+                      <th>临时文件 / 目录</th>
+                      <th class="numeric">大小</th>
+                      <th>最后修改</th>
+                      <th>关联线索</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="v in visibleTemps" :key="v.path">
+                      <td>
+                        <input
+                          type="checkbox"
+                          :checked="selected.includes(v.path)"
+                          :aria-label="'选择 ' + v.name"
+                          @change="toggle(v.path)"
+                        />
+                      </td>
+                      <td class="temp-path">
+                        <strong>{{ v.name }}</strong
+                        ><small :title="v.path">{{ v.path }}</small
+                        ><small v-if="v.error" class="error-text"
+                          >扫描不完整</small
+                        >
+                      </td>
+                      <td class="numeric">{{ bytes(v.bytes) }}</td>
+                      <td class="nowrap muted">{{ date(v.modified) }}</td>
+                      <td>
+                        <span
+                          class="badge"
+                          :class="v.evidence.length ? 'blue' : 'neutral'"
+                          >{{
+                            v.shared
+                              ? "共享目录"
+                              : v.confidence === "confirmed"
+                                ? "已确认"
+                                : v.evidence.length
+                                  ? "有引用线索"
+                                  : "归属未知"
+                          }}</span
+                        ><small v-if="v.evidence.length"
+                          >{{ basename(v.evidence[0]!.project)
+                          }}{{
+                            new Set(v.evidence.map((e) => e.project)).size > 1
+                              ? " 等多个项目"
+                              : ""
+                          }}</small
+                        >
+                      </td>
+                      <td>
+                        <button class="text-button" @click="evidence = v">
+                          查看依据
+                        </button>
+                      </td>
+                    </tr>
+                    <tr v-if="!visibleTemps.length">
+                      <td colspan="6" class="empty-cell">
+                        {{
+                          temps.length
+                            ? "没有匹配的文件"
+                            : "点击“扫描临时文件”分析本机临时目录。扫描结果只保存在当前进程中。"
+                        }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </template>
+          <RecoveryPanel
+            v-if="tab === 'history'"
+            @restored="perform(refresh)"
+          />
+          <div v-if="tab === 'sessions' || tab === 'temps'" class="pagination">
+            <span>每页 50 项</span>
+            <div>
+              <button
+                class="icon-button"
+                aria-label="上一页"
+                :disabled="page === 0 || busy"
+                @click="page--"
+              >
+                <ChevronLeft :size="18" /></button
+              ><span>{{ page + 1 }} / {{ totalPages }}</span
+              ><button
+                class="icon-button"
+                aria-label="下一页"
+                :disabled="page + 1 >= totalPages || busy"
+                @click="page++"
+              >
+                <ChevronRight :size="18" />
               </button>
             </div>
-            <div class="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th class="check-cell">
-                      <input
-                        type="checkbox"
-                        :checked="
-                          visibleTemps.length > 0 &&
-                          visibleTemps.every((v) => selected.includes(v.path))
-                        "
-                        aria-label="选择当前页临时文件"
-                        @change="togglePage"
-                      />
-                    </th>
-                    <th>临时文件 / 目录</th>
-                    <th class="numeric">大小</th>
-                    <th>最后修改</th>
-                    <th>关联线索</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="v in visibleTemps" :key="v.path">
-                    <td>
-                      <input
-                        type="checkbox"
-                        :checked="selected.includes(v.path)"
-                        :aria-label="'选择 ' + v.name"
-                        @change="toggle(v.path)"
-                      />
-                    </td>
-                    <td class="temp-path">
-                      <strong>{{ v.name }}</strong
-                      ><small :title="v.path">{{ v.path }}</small
-                      ><small v-if="v.error" class="error-text"
-                        >扫描不完整</small
-                      >
-                    </td>
-                    <td class="numeric">{{ bytes(v.bytes) }}</td>
-                    <td class="nowrap muted">{{ date(v.modified) }}</td>
-                    <td>
-                      <span
-                        class="badge"
-                        :class="v.evidence.length ? 'blue' : 'neutral'"
-                        >{{
-                          v.shared
-                            ? "共享目录"
-                            : v.confidence === "confirmed"
-                              ? "已确认"
-                              : v.evidence.length
-                                ? "有引用线索"
-                                : "归属未知"
-                        }}</span
-                      ><small v-if="v.evidence.length"
-                        >{{ basename(v.evidence[0]!.project)
-                        }}{{
-                          new Set(v.evidence.map((e) => e.project)).size > 1
-                            ? " 等多个项目"
-                            : ""
-                        }}</small
-                      >
-                    </td>
-                    <td>
-                      <button class="text-button" @click="evidence = v">
-                        查看依据
-                      </button>
-                    </td>
-                  </tr>
-                  <tr v-if="!visibleTemps.length">
-                    <td colspan="6" class="empty-cell">
-                      {{
-                        temps.length
-                          ? "没有匹配的文件"
-                          : "点击“扫描临时文件”分析本机临时目录。扫描结果只保存在当前进程中。"
-                      }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </template>
-        <RecoveryPanel v-if="tab === 'history'" @restored="perform(refresh)" />
-        <div v-if="tab === 'sessions' || tab === 'temps'" class="pagination">
-          <span>每页 50 项</span>
-          <div>
-            <button
-              class="icon-button"
-              aria-label="上一页"
-              :disabled="page === 0 || busy"
-              @click="page--"
-            >
-              <ChevronLeft :size="18" /></button
-            ><span>{{ page + 1 }} / {{ totalPages }}</span
-            ><button
-              class="icon-button"
-              aria-label="下一页"
-              :disabled="page + 1 >= totalPages || busy"
-              @click="page++"
-            >
-              <ChevronRight :size="18" />
-            </button>
           </div>
-        </div>
+        </template>
       </main>
     </div>
   </div>
@@ -1302,7 +1349,7 @@ onUnmounted(() => {
           class="ownership-confirm"
         >
           <p>
-            只有引用线索时，不会进入清理。你可以核实后确认所属项目；此确认只对当前扫描有效。
+            只有引用线索时，普通清理会被阻止。可核实后确认所属项目，或在清理预览中选择强制删除。归属确认只对当前扫描有效。
           </p>
           <select v-model="confirmedProject" aria-label="确认临时文件所属项目">
             <option value="">选择所属项目</option>
@@ -1341,6 +1388,13 @@ onUnmounted(() => {
             </p>
           </div>
         </div>
+        <label v-if="plan.kind === 'temp' && !results.length" class="confirm-label">
+          <input type="checkbox" :checked="plan.force" :disabled="busy" @change="setForceCleanup" />
+          强制删除（无需标记归属）
+        </label>
+        <p v-if="plan.force" class="banner warning">
+          已跳过归属标记和共享目录限制，请逐项核对路径。共享目录可能影响多个项目；仍移入废纸篓。被占用、近期修改、符号链接、扫描不完整或路径发生变化的项目仍会被阻止。
+        </p>
         <div class="cleanup-list">
           <article v-for="item in plan.items" :key="item.id">
             <span class="badge" :class="item.blocked ? 'amber' : 'blue'">{{
@@ -1352,14 +1406,17 @@ onUnmounted(() => {
             </div>
           </article>
         </div>
+        <p v-if="!results.length && !plan.items.some(item => !item.blocked)" class="banner warning" role="status">
+          当前没有可清理项，执行按钮不可用。请查看上方每项的阻止原因。
+        </p>
         <template v-if="!results.length"
           ><label class="confirm-label" for="confirmation"
-            >输入「确认清理」以执行以上可清理项</label
+            >输入「{{ plan.force ? "确认强制清理" : "确认清理" }}」以执行以上可清理项</label
           ><input
             id="confirmation"
             v-model="confirmation"
             autocomplete="off"
-            placeholder="确认清理"
+            :placeholder="plan.force ? '确认强制清理' : '确认清理'"
           />
           <div class="modal-footer">
             <button
@@ -1372,7 +1429,7 @@ onUnmounted(() => {
               class="button danger"
               :disabled="
                 busy ||
-                confirmation !== '确认清理' ||
+                confirmation !== (plan.force ? '确认强制清理' : '确认清理') ||
                 !plan.items.some((i) => !i.blocked)
               "
               @click="execute"

@@ -35,7 +35,8 @@ func (s *Service) tempCandidate(path string) (TempFile, error) {
 	}
 	return TempFile{}, errors.New("请先扫描临时目录")
 }
-func (s *Service) validateTemp(path string) error {
+func (s *Service) validateTemp(path string) error { return s.validateTempForPlan(path, false) }
+func (s *Service) validateTempForPlan(path string, force bool) error {
 	v, err := s.tempCandidate(path)
 	if err != nil {
 		return err
@@ -44,10 +45,10 @@ func (s *Service) validateTemp(path string) error {
 		return errors.New("不处理符号链接")
 	}
 	classifyTemp(&v)
-	if v.CleanupBlocked != "" {
+	if v.CleanupBlocked != "" && !(force && v.Error == "") {
 		return errors.New(v.CleanupBlocked)
 	}
-	if len(v.Evidence) == 0 {
+	if len(v.Evidence) == 0 && !force {
 		return errors.New("归属未知，禁止批量清理")
 	}
 	if v.Error != "" {
@@ -149,6 +150,12 @@ func checkIdle(path string) error {
 	return errors.New("无法确定文件是否空闲")
 }
 func (s *Service) PreviewClean(kind string, ids []string) (CleanPlan, error) {
+	return s.previewClean(kind, ids, false)
+}
+func (s *Service) PreviewForceTempClean(ids []string) (CleanPlan, error) {
+	return s.previewClean("temp", ids, true)
+}
+func (s *Service) previewClean(kind string, ids []string, force bool) (CleanPlan, error) {
 	if kind != "session" && kind != "temp" {
 		return CleanPlan{}, errors.New("未知清理类型")
 	}
@@ -159,7 +166,7 @@ func (s *Service) PreviewClean(kind string, ids []string) (CleanPlan, error) {
 		return CleanPlan{}, errors.New("请等待当前扫描或操作完成")
 	}
 	defer s.operation.Unlock()
-	plan := CleanPlan{Backup: s.Settings().BackupSessions, Token: randomID(), Kind: kind, Items: []CleanItem{}, Expires: time.Now().Add(5 * time.Minute)}
+	plan := CleanPlan{Force: force, Backup: s.Settings().BackupSessions, Token: randomID(), Kind: kind, Items: []CleanItem{}, Expires: time.Now().Add(5 * time.Minute)}
 	seen := map[string]bool{}
 	for _, id := range ids {
 		if seen[id] {
@@ -187,7 +194,7 @@ func (s *Service) PreviewClean(kind string, ids []string) (CleanPlan, error) {
 			}
 		} else {
 			item.Path = id
-			err = s.validateTemp(id)
+			err = s.validateTempForPlan(id, force)
 			if runtime.GOOS != "darwin" {
 				err = errors.New("此版本临时文件回收站仅支持 macOS")
 			}
@@ -221,7 +228,7 @@ func (s *Service) PreviewClean(kind string, ids []string) (CleanPlan, error) {
 	return plan, nil
 }
 func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error) {
-	if confirmation != "确认清理" {
+	if confirmation != "确认清理" && confirmation != "确认强制清理" {
 		return nil, errors.New("请输入“确认清理”")
 	}
 	if !s.operation.TryLock() {
@@ -230,6 +237,10 @@ func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error
 	defer s.operation.Unlock()
 	s.mu.Lock()
 	plan, ok := s.plans[token]
+	if ok && ((plan.Force && confirmation != "确认强制清理") || (!plan.Force && confirmation != "确认清理")) {
+		s.mu.Unlock()
+		return nil, errors.New("确认文字与清理模式不匹配，请核对预览")
+	}
 	delete(s.plans, token)
 	s.mu.Unlock()
 	if !ok || time.Now().After(plan.Expires) {
@@ -243,7 +254,7 @@ func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error
 				return errors.New(item.Blocked)
 			}
 			if plan.Kind == "temp" {
-				if err := s.validateTemp(item.Path); err != nil {
+				if err := s.validateTempForPlan(item.Path, plan.Force); err != nil {
 					return err
 				}
 			} else {
@@ -274,6 +285,9 @@ func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error
 					return err
 				}
 				r.Message = "已移入废纸篓；清空废纸篓后释放空间"
+				if plan.Force {
+					r.Message = "已跳过归属标记检查；" + r.Message
+				}
 			} else if plan.Backup {
 				v, err := s.session(item.ID)
 				if err != nil {

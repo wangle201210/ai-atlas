@@ -20,6 +20,7 @@ type Service struct {
 	pickDirectory      func() (string, error)
 	pickFile           func() (string, error)
 	pickDiagnosticFile func() (string, error)
+	pickReportFile     func() (string, error)
 	settings           Settings
 	scanCancel         context.CancelFunc
 	jobs               sync.WaitGroup
