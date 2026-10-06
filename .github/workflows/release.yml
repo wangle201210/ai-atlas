@@ -32,7 +32,7 @@ jobs:
       - name: Test Go services
         run: go test -race ./internal/... ./cmd/atlas-index
       - name: Build app bundle
-        run: wails3 package ARCH=${{ matrix.arch }}
+        run: wails3 package GOARCH=${{ matrix.arch }}
       - name: Package verified update archive
         run: python3 scripts/package-release.py --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4

@@ -140,7 +140,7 @@ git push origin main v0.1.2
 本地检查打包产物（不会发布）：
 
 ```sh
-wails3 package ARCH=arm64
+wails3 package GOARCH=arm64
 python3 scripts/package-release.py --arch arm64
 ```
 

@@ -16,7 +16,7 @@ info={items[i].text:items[i+1].text for i in range(0,len(items),2)}
 if any(info.get(key)!=version for key in ['CFBundleVersion','CFBundleShortVersionString']):raise SystemExit('Bundle version is stale; rebuild first')
 actual=subprocess.check_output(['lipo','-archs',str(bundle/'Contents/MacOS/ai-atlas')],text=True).strip().split()
 expected='x86_64' if args.arch=='amd64' else 'arm64'
-if actual != [expected]:raise SystemExit(f'Expected {expected}, found {actual}; rebuild with ARCH={args.arch}')
+if actual != [expected]:raise SystemExit(f'Expected {expected}, found {actual}; rebuild with GOARCH={args.arch}')
 subprocess.run(['codesign','--verify','--deep','--strict',str(bundle)],check=True)
 dist=ROOT/'release-dist';dist.mkdir(exist_ok=True)
 target=dist/f'ai-atlas-darwin-{args.arch}.zip'
