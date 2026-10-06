@@ -46,6 +46,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: macos-*
@@ -59,4 +60,4 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           sha256sum *.zip > SHA256SUMS
-          gh release create "$RELEASE_TAG" --verify-tag --title "AI Atlas $RELEASE_TAG" --generate-notes *.zip SHA256SUMS
+          gh release create "$RELEASE_TAG" --verify-tag --title "AI Atlas $RELEASE_TAG" --generate-notes --notes-file ../.github/release-notes.md *.zip SHA256SUMS
