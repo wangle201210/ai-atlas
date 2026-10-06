@@ -2,6 +2,29 @@
 
 本地 AI 编程工具的项目、Token 用量、会话和存储管理工具。当前支持 **Codex**，后续可扩展 Claude Code 等数据源；本次更名不代表已支持其他工具。使用 **Wails 3.0.0-beta.27 + Vue 3 / TypeScript + Go 1.25+ + SQLite**，优先支持 macOS。
 
+## 下载与首次打开（macOS）
+
+从 [GitHub Releases](https://github.com/wangle201210/ai-atlas/releases/latest) 下载适合你的 Mac 的安装包：M 系列芯片选择 `arm64`，Intel 芯片选择 `amd64`。解压后将 `ai-atlas.app` 拖入“应用程序”文件夹。
+
+### 提示“Apple 无法验证 ai-atlas”怎么办？
+
+当前 Release 使用 ad-hoc 签名，尚未完成 Apple Developer ID 签名及公证，首次打开可能出现下面的提示：
+
+<img src="docs/install/macos-unverified-app.png" alt="macOS 提示未打开 ai-atlas，Apple 无法验证是否包含恶意软件" width="360" />
+
+确认安装包来自本项目的 Releases，并信任该应用后，可按以下步骤打开：
+
+1. 在提示窗口点击 **“完成”**，保留应用。
+2. 打开 **苹果菜单 → 系统设置 → 隐私与安全性**，向下滚动至“安全性”。
+3. 找到 `ai-atlas` 被阻止打开的提示，点击 **“仍要打开”**。
+4. 按系统要求完成验证，在再次出现的确认窗口点击 **“打开”**。
+
+如果没看到“仍要打开”，先再次双击 `ai-atlas.app` 触发提示，再回到“隐私与安全性”查看。受公司或学校管理的 Mac 可能需要联系管理员。
+
+上述步骤只为这个应用添加打开例外，无需关闭系统的 Gatekeeper 安全保护。如果提示的是“将损坏你的电脑”或“已损坏”，请不要直接按此方法放行，应先重新下载并核对 Release 提供的 `SHA256SUMS`，或提交 Issue。
+
+参考：[Apple 官方说明：在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)。
+
 ## 功能
 
 - **项目看板**：按工作目录汇总输入、缓存输入、输出、总 Token；日期筛选、最近 30 个有记录日期的趋势、JSON 导出。
