@@ -253,6 +253,7 @@ func TestSessionCleanupUsesCLIAndKeepsUsage(t *testing.T) {
 		t.Skip("lsof is required for occupancy verification")
 	}
 	s := testService(t)
+	s.settings.BackupSessions = false
 	id := "00000000-0000-0000-0000-000000000009"
 	path := writeLog(t, s.home, id, "", []map[string]any{ctx("delete-turn", "/projects/atlas"), tokens(100, 100)})
 	old := time.Now().Add(-48 * time.Hour)

@@ -9,6 +9,30 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function CancelScan(): $CancellablePromise<void> {
+    return $Call.ByID(3743680475);
+}
+
+export function ChooseCLI(): $CancellablePromise<string> {
+    return $Call.ByID(2713692305);
+}
+
+export function ChooseDirectory(): $CancellablePromise<string> {
+    return $Call.ByID(2479556960);
+}
+
+export function ConfirmTempProject(path: string, project: string): $CancellablePromise<void> {
+    return $Call.ByID(3384296243, path, project);
+}
+
+export function Diagnostics(): $CancellablePromise<string> {
+    return $Call.ByID(2675514432);
+}
+
+export function Environment(): $CancellablePromise<$models.EnvironmentStatus> {
+    return $Call.ByID(1438541069);
+}
+
 export function ExecuteClean(token: string, confirmation: string): $CancellablePromise<$models.CleanResult[] | null> {
     return $Call.ByID(3225958592, token, confirmation);
 }
@@ -21,12 +45,36 @@ export function PreviewClean(kind: string, ids: string[] | null): $CancellablePr
     return $Call.ByID(3493913585, kind, ids);
 }
 
+export function Recoveries(): $CancellablePromise<$models.Recovery[] | null> {
+    return $Call.ByID(3298804195);
+}
+
+export function RestoreRecovery(id: string, confirmation: string): $CancellablePromise<void> {
+    return $Call.ByID(4113542385, id, confirmation);
+}
+
 export function ResumeCommand(id: string): $CancellablePromise<string> {
     return $Call.ByID(3990437484, id);
 }
 
+export function RetryFailed(): $CancellablePromise<void> {
+    return $Call.ByID(3822659479);
+}
+
+export function SaveSettings(v: $models.Settings): $CancellablePromise<void> {
+    return $Call.ByID(940207732, v);
+}
+
 export function SessionDetail(id: string): $CancellablePromise<$models.Detail> {
     return $Call.ByID(2557750121, id);
+}
+
+/**
+ * SessionMessages reads only indexed message records, not tool output or screenshots
+ * elsewhere in the rollout. Pages are chronological within a newest-first page order.
+ */
+export function SessionMessages(id: string, query: string, page: number): $CancellablePromise<$models.Detail> {
+    return $Call.ByID(2833662788, id, query, page);
 }
 
 export function Sessions(q: $models.SessionQuery): $CancellablePromise<$models.SessionPage> {
@@ -35,6 +83,10 @@ export function Sessions(q: $models.SessionQuery): $CancellablePromise<$models.S
 
 export function SetArchived(id: string, archive: boolean): $CancellablePromise<void> {
     return $Call.ByID(2447377114, id, archive);
+}
+
+export function Settings(): $CancellablePromise<$models.Settings> {
+    return $Call.ByID(1288175121);
 }
 
 export function StartScan(includeTemps: boolean): $CancellablePromise<void> {

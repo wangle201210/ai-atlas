@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/wailsapp/wails/v3 v3.0.0-beta.27
+	golang.org/x/sys v0.46.0
 )
 
 require (
@@ -15,5 +16,4 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	golang.org/x/mod v0.37.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
 )

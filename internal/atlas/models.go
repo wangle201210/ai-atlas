@@ -10,20 +10,27 @@ type Usage struct {
 	Total     int64 `json:"total"`
 }
 type Session struct {
-	ID       string `json:"id"`
-	Path     string `json:"path"`
-	Project  string `json:"project"`
-	Title    string `json:"title"`
-	Model    string `json:"model"`
-	Created  string `json:"created"`
-	Updated  string `json:"updated"`
-	Parent   string `json:"parent"`
-	Size     int64  `json:"size"`
-	Mtime    int64  `json:"mtime"`
-	Archived bool   `json:"archived"`
-	Missing  bool   `json:"missing"`
-	Warning  string `json:"warning"`
-	Usage    Usage  `json:"usage"`
+	ParserVersion string `json:"parserVersion"`
+	Provider      string `json:"provider"`
+	SourceID      string `json:"sourceId"`
+	SourceHome    string `json:"sourceHome"`
+	Key           string `json:"key"`
+	Completeness  string `json:"completeness"`
+	HasUsage      bool   `json:"hasUsage"`
+	ID            string `json:"id"`
+	Path          string `json:"path"`
+	Project       string `json:"project"`
+	Title         string `json:"title"`
+	Model         string `json:"model"`
+	Created       string `json:"created"`
+	Updated       string `json:"updated"`
+	Parent        string `json:"parent"`
+	Size          int64  `json:"size"`
+	Mtime         int64  `json:"mtime"`
+	Archived      bool   `json:"archived"`
+	Missing       bool   `json:"missing"`
+	Warning       string `json:"warning"`
+	Usage         Usage  `json:"usage"`
 }
 type Project struct {
 	Path     string `json:"path"`
@@ -42,24 +49,34 @@ type Storage struct {
 	Error string `json:"error"`
 }
 type Snapshot struct {
-	Projects  []Project `json:"projects"`
-	Usage     Usage     `json:"usage"`
-	Sessions  int       `json:"sessions"`
-	Bytes     int64     `json:"bytes"`
-	Days      []Day     `json:"days"`
-	Storage   []Storage `json:"storage"`
-	Home      string    `json:"home"`
-	Database  string    `json:"database"`
-	TempRoots []string  `json:"tempRoots"`
-	LastScan  string    `json:"lastScan"`
+	CompleteSessions int       `json:"completeSessions"`
+	PartialSessions  int       `json:"partialSessions"`
+	NoUsageSessions  int       `json:"noUsageSessions"`
+	Projects         []Project `json:"projects"`
+	Usage            Usage     `json:"usage"`
+	Sessions         int       `json:"sessions"`
+	Bytes            int64     `json:"bytes"`
+	Days             []Day     `json:"days"`
+	Storage          []Storage `json:"storage"`
+	Home             string    `json:"home"`
+	Database         string    `json:"database"`
+	TempRoots        []string  `json:"tempRoots"`
+	LastScan         string    `json:"lastScan"`
 }
 type ScanStatus struct {
-	Running  bool     `json:"running"`
-	Phase    string   `json:"phase"`
-	Done     int      `json:"done"`
-	Total    int      `json:"total"`
-	Errors   []string `json:"errors"`
-	Finished string   `json:"finished"`
+	Started       string   `json:"started"`
+	ElapsedMillis int64    `json:"elapsedMillis"`
+	CurrentFile   string   `json:"currentFile"`
+	FailedFiles   []string `json:"failedFiles"`
+	Cancelled     bool     `json:"cancelled"`
+	Parsed        int      `json:"parsed"`
+	Skipped       int      `json:"skipped"`
+	Running       bool     `json:"running"`
+	Phase         string   `json:"phase"`
+	Done          int      `json:"done"`
+	Total         int      `json:"total"`
+	Errors        []string `json:"errors"`
+	Finished      string   `json:"finished"`
 }
 type SessionQuery struct {
 	Search  string `json:"search"`
@@ -78,6 +95,8 @@ type Message struct {
 	Time string `json:"time"`
 }
 type Detail struct {
+	Total     int       `json:"total"`
+	Page      int       `json:"page"`
 	Session   Session   `json:"session"`
 	Messages  []Message `json:"messages"`
 	Truncated bool      `json:"truncated"`
@@ -89,15 +108,18 @@ type Evidence struct {
 	Path      string `json:"path"`
 }
 type TempFile struct {
-	Path     string     `json:"path"`
-	Name     string     `json:"name"`
-	Bytes    int64      `json:"bytes"`
-	Modified string     `json:"modified"`
-	Mtime    int64      `json:"mtime"`
-	IsDir    bool       `json:"isDir"`
-	Link     bool       `json:"link"`
-	Evidence []Evidence `json:"evidence"`
-	Error    string     `json:"error"`
+	Shared         bool       `json:"shared"`
+	Confidence     string     `json:"confidence"`
+	CleanupBlocked string     `json:"cleanupBlocked"`
+	Path           string     `json:"path"`
+	Name           string     `json:"name"`
+	Bytes          int64      `json:"bytes"`
+	Modified       string     `json:"modified"`
+	Mtime          int64      `json:"mtime"`
+	IsDir          bool       `json:"isDir"`
+	Link           bool       `json:"link"`
+	Evidence       []Evidence `json:"evidence"`
+	Error          string     `json:"error"`
 }
 type CleanItem struct {
 	ID      string `json:"id"`
@@ -107,6 +129,7 @@ type CleanItem struct {
 	Mtime   int64  `json:"mtime"`
 }
 type CleanPlan struct {
+	Backup  bool        `json:"backup"`
 	Token   string      `json:"token"`
 	Kind    string      `json:"kind"`
 	Items   []CleanItem `json:"items"`

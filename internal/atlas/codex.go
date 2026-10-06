@@ -37,7 +37,10 @@ func codexBinary() (string, error) {
 	return "", errors.New("未找到 Codex CLI，请安装或设置 AI_ATLAS_CODEX")
 }
 func (s *Service) codexCommand(ctx context.Context, args ...string) (*exec.Cmd, error) {
-	path, err := codexBinary()
+	return s.codexCommandHome(ctx, s.sourceHome(), args...)
+}
+func (s *Service) codexCommandHome(ctx context.Context, home string, args ...string) (*exec.Cmd, error) {
+	path, err := s.cliBinary()
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +51,6 @@ func (s *Service) codexCommand(ctx context.Context, args ...string) (*exec.Cmd, 
 			env = append(env, v)
 		}
 	}
-	cmd.Env = append(env, "CODEX_HOME="+s.home, "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cmd.Env = append(env, "CODEX_HOME="+home, "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return cmd, nil
 }

@@ -2,6 +2,7 @@ package atlas
 
 import (
 	"cmp"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,14 +17,21 @@ import (
 )
 
 type Service struct {
-	db           *sql.DB
-	home, dbPath string
-	roots        []string
-	mu           sync.Mutex
-	status       ScanStatus
-	temps        []TempFile
-	plans        map[string]CleanPlan
-	operation    sync.Mutex
+	pickDirectory func() (string, error)
+	pickFile      func() (string, error)
+	settings      Settings
+	scanCancel    context.CancelFunc
+	jobs          sync.WaitGroup
+	closing       bool
+	trashDir      string
+	db            *sql.DB
+	home, dbPath  string
+	roots         []string
+	mu            sync.Mutex
+	status        ScanStatus
+	temps         []TempFile
+	plans         map[string]CleanPlan
+	operation     sync.Mutex
 }
 
 func New(home, dbPath string) (*Service, error) {
@@ -37,54 +45,116 @@ func New(home, dbPath string) (*Service, error) {
 		return nil, err
 	}
 	dbPath = cmp.Or(dbPath, os.Getenv("AI_ATLAS_DB"), filepath.Join(user, ".ai-atlas", "atlas.sqlite"))
+	dbPath, err = filepath.Abs(dbPath)
+	if err != nil {
+		return nil, err
+	}
 	db, err := openStore(dbPath)
 	if err != nil {
 		return nil, err
 	}
-	roots := []string{}
-	for _, p := range []string{filepath.Join(home, "tmp"), filepath.Join(home, ".tmp"), "/tmp", os.TempDir()} {
-		p = canonicalTmp(p)
-		if !slices.Contains(roots, p) {
-			roots = append(roots, p)
+	cfg := Settings{Home: home, BackupSessions: true, TempDirectories: []string{}, ExcludedDirectories: []string{}}
+	var raw string
+	if err = db.QueryRow("SELECT value FROM metadata WHERE key='settings'").Scan(&raw); err == nil {
+		if err = json.Unmarshal([]byte(raw), &cfg); err != nil {
+			db.Close()
+			return nil, err
 		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		db.Close()
+		return nil, err
 	}
-	return &Service{db: db, home: home, dbPath: dbPath, roots: roots, status: ScanStatus{Errors: []string{}}, plans: map[string]CleanPlan{}, temps: []TempFile{}}, nil
+	if os.Getenv("CODEX_HOME") != "" {
+		cfg.Home = home
+	}
+	return &Service{db: db, home: cfg.Home, dbPath: dbPath, roots: rootsFor(cfg), settings: cfg, trashDir: filepath.Join(user, ".Trash"), status: ScanStatus{Errors: []string{}, FailedFiles: []string{}}, plans: map[string]CleanPlan{}, temps: []TempFile{}}, nil
 }
-func Close(s *Service) { s.operation.Lock(); defer s.operation.Unlock(); s.db.Close() }
+func Close(s *Service) {
+	s.mu.Lock()
+	s.closing = true
+	if s.scanCancel != nil {
+		s.scanCancel()
+	}
+	s.mu.Unlock()
+	s.jobs.Wait()
+	s.operation.Lock()
+	defer s.operation.Unlock()
+	s.db.Close()
+}
 func (s *Service) Status() ScanStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := s.status
 	v.Errors = slices.Clone(v.Errors)
+	v.FailedFiles = slices.Clone(v.FailedFiles)
+	if v.Running {
+		if t, e := time.Parse(time.RFC3339Nano, v.Started); e == nil {
+			v.ElapsedMillis = time.Since(t).Milliseconds()
+		}
+	}
 	return v
 }
-func (s *Service) StartScan(includeTemps bool) error {
+func (s *Service) StartScan(includeTemps bool) error { return s.startScan(includeTemps, nil) }
+func (s *Service) CancelScan() {
 	s.mu.Lock()
-	if s.status.Running {
-		s.mu.Unlock()
-		return errors.New("扫描正在进行")
+	defer s.mu.Unlock()
+	if s.scanCancel != nil {
+		s.status.Phase = "正在取消扫描"
+		s.scanCancel()
 	}
-	s.status = ScanStatus{Running: true, Phase: "正在发现会话", Errors: []string{}}
+}
+func (s *Service) RetryFailed() error {
+	s.mu.Lock()
+	files := slices.Clone(s.status.FailedFiles)
 	s.mu.Unlock()
-	go func() {
-		s.operation.Lock()
+	if len(files) == 0 {
+		return errors.New("没有需要重试的日志文件")
+	}
+	return s.startScan(false, files)
+}
+func (s *Service) startScan(includeTemps bool, files []string) error {
+	if !s.operation.TryLock() {
+		return errors.New("请等待当前操作完成")
+	}
+	s.mu.Lock()
+	if s.closing || s.status.Running {
+		s.mu.Unlock()
+		s.operation.Unlock()
+		return errors.New("扫描正在进行或应用正在退出")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.scanCancel = cancel
+	s.status = ScanStatus{Running: true, Phase: "正在发现会话", Started: time.Now().Format(time.RFC3339Nano), Errors: []string{}, FailedFiles: []string{}}
+	s.jobs.Go(func() {
+		defer cancel()
 		defer s.operation.Unlock()
-		err := s.scan(includeTemps)
+		err := s.scanContext(ctx, includeTemps, files)
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if err != nil {
+		s.status.Running = false
+		s.scanCancel = nil
+		s.status.Phase = "扫描完成"
+		s.status.Finished = time.Now().Format(time.RFC3339Nano)
+		start, _ := time.Parse(time.RFC3339Nano, s.status.Started)
+		s.status.ElapsedMillis = time.Since(start).Milliseconds()
+		if errors.Is(err, context.Canceled) {
+			s.status.Cancelled = true
+			s.status.Phase = "已取消，已完成的索引保留"
+		} else if err != nil {
+			s.status.Phase = "扫描未完成"
 			s.status.Errors = append(s.status.Errors, err.Error())
 		}
-		s.status.Running = false
-		s.status.Phase = "扫描完成"
-		s.status.Finished = time.Now().Format(time.RFC3339)
-	}()
+	})
+	s.mu.Unlock()
 	return nil
 }
 func Scan(s *Service, includeTemps bool) error {
 	s.operation.Lock()
 	defer s.operation.Unlock()
 	return s.scan(includeTemps)
+}
+func (s *Service) scan(includeTemps bool) error {
+	return s.scanContext(context.Background(), includeTemps, nil)
 }
 func (s *Service) progress(phase string, done, total int) {
 	s.mu.Lock()
@@ -100,27 +170,32 @@ func (s *Service) scanError(err error) {
 		s.status.Errors = append(s.status.Errors, err.Error())
 	}
 }
-func (s *Service) scan(includeTemps bool) error {
-	const parserVersion = "2"
-	var storedVersion string
-	versionErr := s.db.QueryRow("SELECT value FROM metadata WHERE key='parserVersion'").Scan(&storedVersion)
-	if versionErr != nil && !errors.Is(versionErr, sql.ErrNoRows) {
-		return versionErr
-	}
-	files := []string{}
-	for _, name := range []string{"sessions", "archived_sessions"} {
-		root := filepath.Join(s.home, name)
-		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
+func (s *Service) scanContext(ctx context.Context, includeTemps bool, retry []string) error {
+	files := slices.Clone(retry)
+	if len(retry) == 0 {
+		for _, name := range []string{"sessions", "archived_sessions"} {
+			root := filepath.Join(s.sourceHome(), name)
+			err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if s.excluded(path) {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if d.Type().IsRegular() && strings.HasSuffix(path, ".jsonl") {
+					files = append(files, path)
+				}
+				return nil
+			})
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
-			if d.Type().IsRegular() && strings.HasSuffix(path, ".jsonl") {
-				files = append(files, path)
-			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
 		}
 	}
 	existing, err := s.allSessions()
@@ -133,18 +208,36 @@ func (s *Service) scan(includeTemps bool) error {
 	}
 	seenIDs := map[string]bool{}
 	for i, path := range files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if s.excluded(path) {
+			continue
+		}
+		s.mu.Lock()
+		s.status.CurrentFile = path
+		s.mu.Unlock()
 		s.progress("索引会话日志", i, len(files))
 		info, err := os.Stat(path)
 		if err != nil {
 			s.scanError(err)
 			continue
 		}
-		if old, ok := byPath[path]; ok && storedVersion == parserVersion && old.Mtime == info.ModTime().UnixNano() && old.Size == info.Size() {
+		if old, ok := byPath[path]; ok && old.ParserVersion == parserVersion && old.Mtime == info.ModTime().UnixNano() && old.Size == info.Size() {
 			seenIDs[old.ID] = true
+			s.mu.Lock()
+			s.status.Skipped++
+			s.mu.Unlock()
 			continue
 		}
-		p, err := parseSession(path, info)
+		p, err := parseSessionContext(ctx, path, info)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+			s.mu.Lock()
+			s.status.FailedFiles = append(s.status.FailedFiles, path)
+			s.mu.Unlock()
 			s.scanError(fmt.Errorf("%s: %w", filepath.Base(path), err))
 			continue
 		}
@@ -153,6 +246,14 @@ func (s *Service) scan(includeTemps bool) error {
 			continue
 		}
 		seenIDs[p.Session.ID] = true
+		p.Session.ParserVersion = parserVersion
+		p.Session.Provider = "codex"
+		p.Session.SourceHome = s.sourceHome()
+		p.Session.SourceID = sourceID(s.sourceHome())
+		p.Session.Key = "codex:" + p.Session.SourceID + ":" + p.Session.ID
+		s.mu.Lock()
+		s.status.Parsed++
+		s.mu.Unlock()
 		if err = s.saveParsed(p); err != nil {
 			return err
 		}
@@ -169,30 +270,17 @@ func (s *Service) scan(includeTemps bool) error {
 		}
 	}
 	s.progress("统计存储占用", len(files), len(files))
-	storage := []Storage{}
-	entries, err := os.ReadDir(s.home)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		p := filepath.Join(s.home, e.Name())
-		n, _, err := measure(p)
-		row := Storage{Path: p, Bytes: n}
-		if err != nil {
-			row.Error = err.Error()
-		}
-		storage = append(storage, row)
-	}
-	slices.SortFunc(storage, func(a, b Storage) int { return cmp.Compare(b.Bytes, a.Bytes) })
-	raw, _ := json.Marshal(storage)
-	if _, err = s.db.Exec("INSERT OR REPLACE INTO metadata VALUES('storage',?)", string(raw)); err != nil {
+	if err = s.refreshStorage(ctx); err != nil {
 		return err
 	}
 	if includeTemps {
-		s.progress("分析临时文件及引用关系", 0, len(s.roots))
-		if err = s.scanTemps(); err != nil {
+		s.progress("分析临时文件及引用关系", 0, len(s.tempRoots()))
+		if err = s.scanTempsContext(ctx); err != nil {
 			return err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if _, err = s.db.Exec("INSERT OR REPLACE INTO metadata VALUES('parserVersion',?)", parserVersion); err != nil {
 		return err
@@ -242,10 +330,23 @@ func (s *Service) saveParsed(p parsed) error {
 			return err
 		}
 	}
+	if _, err = tx.Exec("DELETE FROM messages WHERE session_id=?", v.ID); err != nil {
+		return err
+	}
+	msg, err := tx.Prepare("INSERT INTO messages VALUES(?,?,?,?,?,?)")
+	if err != nil {
+		return err
+	}
+	defer msg.Close()
+	for i, m := range p.Messages {
+		if _, err = msg.Exec(v.ID, i, m.Offset, m.Length, m.Role, m.Time); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 func (s *Service) Overview(since, until string) (Snapshot, error) {
-	result := Snapshot{Home: s.home, Database: s.dbPath, TempRoots: s.roots, Projects: []Project{}, Days: []Day{}, Storage: []Storage{}}
+	result := Snapshot{Home: s.sourceHome(), Database: s.dbPath, TempRoots: s.tempRoots(), Projects: []Project{}, Days: []Day{}, Storage: []Storage{}}
 	all, err := s.allSessions()
 	if err != nil {
 		return result, err
@@ -258,6 +359,14 @@ func (s *Service) Overview(since, until string) (Snapshot, error) {
 		return projects[path]
 	}
 	for _, v := range all {
+		switch v.Completeness {
+		case "complete":
+			result.CompleteSessions++
+		case "none":
+			result.NoUsageSessions++
+		default:
+			result.PartialSessions++
+		}
 		p := ensure(v.Project)
 		p.Sessions++
 		result.Sessions++
@@ -284,6 +393,36 @@ func (s *Service) Overview(since, until string) (Snapshot, error) {
 	rows.Close()
 	if err != nil {
 		return result, err
+	}
+	groups := map[string]map[string]bool{}
+	for _, v := range all {
+		if groups[v.Project] == nil {
+			groups[v.Project] = map[string]bool{}
+		}
+		groups[v.Project][v.ID] = true
+	}
+	links, e := s.db.Query("SELECT DISTINCT project,session_id FROM events")
+	if e != nil {
+		return result, e
+	}
+	for links.Next() {
+		var path, id string
+		if e = links.Scan(&path, &id); e != nil {
+			links.Close()
+			return result, e
+		}
+		if groups[path] == nil {
+			groups[path] = map[string]bool{}
+		}
+		groups[path][id] = true
+	}
+	e = links.Err()
+	links.Close()
+	if e != nil {
+		return result, e
+	}
+	for path, p := range projects {
+		p.Sessions = len(groups[path])
 	}
 	for _, p := range projects {
 		result.Projects = append(result.Projects, *p)
@@ -327,10 +466,30 @@ func (s *Service) Sessions(q SessionQuery) (SessionPage, error) {
 	if err != nil {
 		return SessionPage{}, err
 	}
+	related := map[string]bool{}
+	if q.Project != "" {
+		rows, e := s.db.Query("SELECT DISTINCT session_id FROM events WHERE project=?", q.Project)
+		if e != nil {
+			return SessionPage{}, e
+		}
+		for rows.Next() {
+			var id string
+			if e = rows.Scan(&id); e != nil {
+				rows.Close()
+				return SessionPage{}, e
+			}
+			related[id] = true
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return SessionPage{}, e
+		}
+	}
 	filtered := []Session{}
 	search := strings.ToLower(q.Search)
 	for _, v := range all {
-		if q.Project != "" && v.Project != q.Project {
+		if q.Project != "" && v.Project != q.Project && !related[v.ID] {
 			continue
 		}
 		if !strings.Contains(strings.ToLower(v.Title+v.Project+v.ID), search) {
@@ -361,45 +520,4 @@ func (s *Service) Sessions(q SessionQuery) (SessionPage, error) {
 	return SessionPage{filtered[start:min(start+50, len(filtered))], len(filtered)}, nil
 }
 
-var stopPreview = errors.New("preview limit")
-
-func (s *Service) SessionDetail(id string) (Detail, error) {
-	v, err := s.session(id)
-	if err != nil {
-		return Detail{}, err
-	}
-	out := Detail{Session: v, Messages: []Message{}}
-	if v.Missing {
-		return out, nil
-	}
-	info, err := os.Stat(v.Path)
-	if err != nil {
-		return out, err
-	}
-	if !info.Mode().IsRegular() {
-		return out, errors.New("会话文件不是普通文件")
-	}
-	err = readRecords(v.Path, func(r record, p payload) error {
-		if r.Type != "response_item" || p.Type != "message" || (p.Role != "user" && p.Role != "assistant") {
-			return nil
-		}
-		text := ""
-		for _, c := range p.Content {
-			if c.Text != "" {
-				text += c.Text + "\n"
-			}
-		}
-		if text != "" {
-			out.Messages = append(out.Messages, Message{p.Role, shortText(text, 12000), r.Timestamp})
-		}
-		if len(out.Messages) >= 150 {
-			out.Truncated = true
-			return stopPreview
-		}
-		return nil
-	})
-	if errors.Is(err, stopPreview) {
-		err = nil
-	}
-	return out, err
-}
+func (s *Service) SessionDetail(id string) (Detail, error) { return s.SessionMessages(id, "", 0) }

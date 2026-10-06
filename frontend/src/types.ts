@@ -13,6 +13,9 @@ export interface Project {
   usage: Usage;
 }
 export interface Snapshot {
+  completeSessions: number;
+  partialSessions: number;
+  noUsageSessions: number;
   projects: Project[];
   usage: Usage;
   sessions: number;
@@ -25,6 +28,12 @@ export interface Snapshot {
   lastScan: string;
 }
 export interface Session {
+  provider: string;
+  sourceId: string;
+  sourceHome: string;
+  key: string;
+  completeness: string;
+  hasUsage: boolean;
   id: string;
   path: string;
   project: string;
@@ -52,11 +61,20 @@ export interface SessionPage {
   total: number;
 }
 export interface Detail {
+  total: number;
+  page: number;
   session: Session;
   messages: { role: string; text: string; time: string }[];
   truncated: boolean;
 }
 export interface ScanStatus {
+  started?: string;
+  elapsedMillis?: number;
+  currentFile?: string;
+  failedFiles?: string[];
+  cancelled?: boolean;
+  parsed?: number;
+  skipped?: number;
   running: boolean;
   phase: string;
   done: number;
@@ -71,6 +89,9 @@ export interface Evidence {
   path: string;
 }
 export interface TempFile {
+  shared: boolean;
+  confidence: string;
+  cleanupBlocked: string;
   path: string;
   name: string;
   bytes: number;
@@ -82,6 +103,7 @@ export interface TempFile {
   error: string;
 }
 export interface CleanPlan {
+  backup: boolean;
   token: string;
   kind: string;
   items: {

@@ -10,6 +10,7 @@ export interface CleanItem {
 }
 
 export interface CleanPlan {
+    "backup": boolean;
     "token": string;
     "kind": string;
     "items": CleanItem[] | null;
@@ -29,9 +30,18 @@ export interface Day {
 }
 
 export interface Detail {
+    "total": number;
+    "page": number;
     "session": Session;
     "messages": Message[] | null;
     "truncated": boolean;
+}
+
+export interface EnvironmentStatus {
+    "homeExists": boolean;
+    "cliPath": string;
+    "cliVersion": string;
+    "error": string;
 }
 
 export interface Evidence {
@@ -55,7 +65,31 @@ export interface Project {
     "usage": Usage;
 }
 
+export interface Recovery {
+    "id": string;
+    "kind": string;
+    "source": string;
+    "stored": string;
+    "sessionId": string;
+    "home": string;
+    "created": string;
+    "state": string;
+    "error": string;
+    "restoredAt": string;
+    "size": number;
+    "storedBytes": number;
+    "digest": string;
+    "wasArchived": boolean;
+}
+
 export interface ScanStatus {
+    "started": string;
+    "elapsedMillis": number;
+    "currentFile": string;
+    "failedFiles": string[] | null;
+    "cancelled": boolean;
+    "parsed": number;
+    "skipped": number;
     "running": boolean;
     "phase": string;
     "done": number;
@@ -65,6 +99,13 @@ export interface ScanStatus {
 }
 
 export interface Session {
+    "parserVersion": string;
+    "provider": string;
+    "sourceId": string;
+    "sourceHome": string;
+    "key": string;
+    "completeness": string;
+    "hasUsage": boolean;
     "id": string;
     "path": string;
     "project": string;
@@ -94,7 +135,20 @@ export interface SessionQuery {
     "page": number;
 }
 
+export interface Settings {
+    "home": string;
+    "cli": string;
+    "scanSystemTemp": boolean;
+    "tempDirectories": string[] | null;
+    "excludedDirectories": string[] | null;
+    "backupSessions": boolean;
+    "configured": boolean;
+}
+
 export interface Snapshot {
+    "completeSessions": number;
+    "partialSessions": number;
+    "noUsageSessions": number;
     "projects": Project[] | null;
     "usage": Usage;
     "sessions": number;
@@ -114,6 +168,9 @@ export interface Storage {
 }
 
 export interface TempFile {
+    "shared": boolean;
+    "confidence": string;
+    "cleanupBlocked": string;
     "path": string;
     "name": string;
     "bytes": number;

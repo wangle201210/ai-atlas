@@ -28,7 +28,14 @@ func main() {
 		return checkUpdateLocation()
 	})
 	defer updates.Close(updateService)
+	var window *application.WebviewWindow
 	app := application.New(application.Options{
+		SingleInstance: instanceOptions(atlas.InstanceKey(service), func() {
+			if window != nil {
+				window.Show()
+				window.Focus()
+			}
+		}),
 		Name: "AI Atlas", Description: "AI 编程工具的用量、会话与存储分析",
 		Services: []application.Service{application.NewService(service), application.NewService(updateService)},
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
@@ -49,7 +56,12 @@ func main() {
 	})
 	app.Event.On(updater.EventVerifying, func(_ *application.CustomEvent) { updates.ReportPhase(updateService, "verifying") })
 	app.Event.On(updater.EventInstalling, func(_ *application.CustomEvent) { updates.ReportPhase(updateService, "installing") })
-	app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "AI Atlas", Width: 1320, Height: 880, MinWidth: 800, MinHeight: 620, BackgroundColour: application.NewRGB(248, 250, 252), URL: "/"})
+	window = app.Window.NewWithOptions(application.WebviewWindowOptions{Title: "AI Atlas", Width: 1320, Height: 880, MinWidth: 800, MinHeight: 620, BackgroundColour: application.NewRGB(248, 250, 252), URL: "/"})
+	atlas.AttachPickers(service, func() (string, error) {
+		return app.Dialog.OpenFile().CanChooseDirectories(true).CanChooseFiles(false).AttachToWindow(window).PromptForSingleSelection()
+	}, func() (string, error) {
+		return app.Dialog.OpenFile().CanChooseDirectories(false).CanChooseFiles(true).AttachToWindow(window).PromptForSingleSelection()
+	})
 	if err = app.Run(); err != nil {
 		log.Print(err)
 	}

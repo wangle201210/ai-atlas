@@ -13,6 +13,7 @@ import {
   Folder,
   FolderSearch,
   HardDrive,
+  History,
   LayoutDashboard,
   RefreshCw,
   Search,
@@ -26,6 +27,8 @@ import { Clipboard } from "@wailsio/runtime";
 import { api } from "./api";
 import appIcon from "./assets/token-signal.svg";
 import UpdateControl from "./components/UpdateControl.vue";
+import PreferencesPanel from "./components/PreferencesPanel.vue";
+import RecoveryPanel from "./components/RecoveryPanel.vue";
 import type {
   Snapshot,
   ScanStatus,
@@ -42,6 +45,7 @@ const tabs = [
   { id: "sessions", label: "会话管理", icon: FileText },
   { id: "storage", label: "存储空间", icon: HardDrive },
   { id: "temps", label: "临时文件", icon: FolderSearch },
+  { id: "history", label: "清理历史", icon: History },
 ];
 const tab = ref("overview"),
   data = ref<Snapshot>(),
@@ -65,7 +69,7 @@ const busy = ref(false),
   until = ref("");
 const sessions = ref<SessionPage>({ items: [], total: 0 }),
   temps = ref<TempFile[]>([]),
-  tempFilter = ref("all"),
+  tempFilter = ref("linked"),
   selected = ref<string[]>([]),
   detail = ref<Detail>(),
   evidence = ref<TempFile>(),
@@ -76,7 +80,10 @@ const sessions = ref<SessionPage>({ items: [], total: 0 }),
 const dialog = ref<HTMLDialogElement>(),
   projectSort = ref("tokens"),
   resume = ref(""),
-  copyNotice = ref("");
+  copyNotice = ref(""),
+  messageSearch = ref(""),
+  messagePage = ref(0),
+  confirmedProject = ref("");
 const title = computed(
   () => tabs.find((t) => t.id === tab.value)?.label || "项目概览",
 );
@@ -216,6 +223,17 @@ async function scan(withTemps = false) {
     showNotice("扫描在后台进行，可以继续浏览已有数据。");
   });
 }
+async function cancelScan() {
+  await perform(async () => {
+    await api.cancelScan();
+  });
+}
+async function retryScan() {
+  await perform(async () => {
+    await api.retryFailed();
+    status.value = await api.status();
+  });
+}
 async function tick() {
   if (polling) return;
   polling = true;
@@ -262,8 +280,30 @@ function togglePage() {
 async function openDetail(v: Session) {
   clearCopyNotice();
   await perform(async () => {
+    messageSearch.value = "";
+    messagePage.value = 0;
     detail.value = await api.detail(v.id);
     resume.value = "";
+  });
+}
+async function loadMessages(page: number) {
+  if (!detail.value) return;
+  await perform(async () => {
+    detail.value = await api.messages(
+      detail.value!.session.id,
+      messageSearch.value,
+      page,
+    );
+    messagePage.value = page;
+  });
+}
+async function confirmTemp() {
+  if (!evidence.value || !confirmedProject.value) return;
+  await perform(async () => {
+    await api.confirmTemp(evidence.value!.path, confirmedProject.value);
+    temps.value = await api.temps();
+    evidence.value = temps.value.find((v) => v.path === evidence.value!.path);
+    showNotice("归属确认已记录，仅对本次扫描有效");
   });
 }
 async function preview() {
@@ -442,12 +482,39 @@ onUnmounted(() => {
             <X :size="16" />
           </button>
         </div>
+        <div v-if="busy && !data" class="banner info" role="status">
+          正在读取本地索引，请稍候…
+        </div>
         <div v-if="status.running" class="scan-progress" role="status">
           <div>
             <RefreshCw :size="15" class="spinning" />{{ status.phase
             }}<span>{{ status.done }} / {{ status.total }}</span>
           </div>
           <progress :value="status.done" :max="status.total || 1"></progress>
+        </div>
+        <div v-if="status.running || status.finished" class="scan-tools">
+          <span
+            >{{ status.running ? "已运行" : "用时" }}
+            {{ Math.round((status.elapsedMillis || 0) / 1000) }} 秒 · 解析
+            {{ status.parsed || 0 }} · 跳过 {{ status.skipped || 0 }}</span
+          >
+          <button
+            v-if="status.running"
+            class="button secondary"
+            @click="cancelScan"
+          >
+            取消扫描
+          </button>
+          <button
+            v-else-if="status.failedFiles?.length"
+            class="button secondary"
+            @click="retryScan"
+          >
+            重试失败日志
+          </button>
+          <small v-if="status.running" class="path-wrap">{{
+            status.currentFile
+          }}</small>
         </div>
         <details v-if="status.errors.length" class="scan-errors">
           <summary>
@@ -465,7 +532,9 @@ onUnmounted(() => {
                     ? "EVERY CONVERSATION, ORGANIZED"
                     : tab === "storage"
                       ? "MAKE ROOM FOR WHAT’S NEXT"
-                      : "FOLLOW THE FILE TRAIL"
+                      : tab === "history"
+                        ? "RECOVERY & HISTORY"
+                        : "FOLLOW THE FILE TRAIL"
               }}
             </div>
             <h1>{{ title }}</h1>
@@ -477,7 +546,9 @@ onUnmounted(() => {
                     ? "找回上下文，整理历史，把注意力留给正在做的事。"
                     : tab === "storage"
                       ? "从大文件开始，看清 Codex 的空间都用在哪里。"
-                      : "从日志中的路径引用，追溯临时产物与项目的关联。"
+                      : tab === "history"
+                        ? "查看清理操作和备份，在需要时恢复原始文件。"
+                        : "从日志中的路径引用，追溯临时产物与项目的关联。"
               }}
             </p>
           </div>
@@ -499,6 +570,11 @@ onUnmounted(() => {
         </section>
 
         <template v-if="tab === 'overview'">
+          <div v-if="data?.sessions" class="quality-summary">
+            统计完整性：完整 {{ data.completeSessions }} · 部分
+            {{ data.partialSessions }} · 无用量记录
+            {{ data.noUsageSessions }}。部分记录的原因可在会话详情查看。
+          </div>
           <div class="date-filter">
             <span>用量时间范围</span
             ><label
@@ -522,7 +598,7 @@ onUnmounted(() => {
               全部时间</button
             ><small>会话数和存储显示当前全量</small>
           </div>
-          <section class="stats-grid" aria-label="用量摘要">
+          <section v-if="data" class="stats-grid" aria-label="用量摘要">
             <article class="stat-card">
               <div><span>总 Token 用量</span><Activity :size="18" /></div>
               <strong :title="number(data?.usage.total)">{{
@@ -559,7 +635,7 @@ onUnmounted(() => {
               ><small>本机仍存在的日志<span>逻辑文件大小</span></small>
             </article>
           </section>
-          <div v-if="!data?.sessions" class="empty-state panel">
+          <div v-if="data && !data.sessions" class="empty-state panel">
             <FolderSearch :size="38" />
             <h2>先给你的工作空间画张地图</h2>
             <p>
@@ -571,10 +647,12 @@ onUnmounted(() => {
               :disabled="status.running || busy"
               @click="scan(false)"
             >
-              开始扫描
+              开始扫描</button
+            ><button class="button secondary" @click="settings = true">
+              设置数据源
             </button>
           </div>
-          <template v-else
+          <template v-else-if="data"
             ><section class="panel chart-panel">
               <div class="panel-heading">
                 <div>
@@ -640,7 +718,7 @@ onUnmounted(() => {
                   <thead>
                     <tr>
                       <th>项目 / 工作目录</th>
-                      <th class="numeric">会话</th>
+                      <th class="numeric">关联会话</th>
                       <th class="numeric">输入 / 缓存</th>
                       <th class="numeric">输出</th>
                       <th class="numeric">总 Token</th>
@@ -795,7 +873,12 @@ onUnmounted(() => {
                       <span :title="v.project">{{ basename(v.project) }}</span
                       ><small>{{ v.model || "模型未知" }}</small>
                     </td>
-                    <td class="numeric">{{ count(v.usage.total) }}</td>
+                    <td class="numeric">
+                      {{ v.hasUsage ? count(v.usage.total) : "无记录"
+                      }}<small v-if="v.completeness === 'partial'"
+                        >部分统计</small
+                      >
+                    </td>
                     <td class="numeric">
                       {{ v.missing ? "—" : bytes(v.size) }}
                     </td>
@@ -992,7 +1075,13 @@ onUnmounted(() => {
                         class="badge"
                         :class="v.evidence.length ? 'blue' : 'neutral'"
                         >{{
-                          v.evidence.length ? "有引用线索" : "归属未知"
+                          v.shared
+                            ? "共享目录"
+                            : v.confidence === "confirmed"
+                              ? "已确认"
+                              : v.evidence.length
+                                ? "有引用线索"
+                                : "归属未知"
                         }}</span
                       ><small v-if="v.evidence.length"
                         >{{ basename(v.evidence[0]!.project)
@@ -1023,6 +1112,7 @@ onUnmounted(() => {
             </div>
           </section>
         </template>
+        <RecoveryPanel v-if="tab === 'history'" @restored="perform(refresh)" />
         <div v-if="tab === 'sessions' || tab === 'temps'" class="pagination">
           <span>每页 50 项</span>
           <div>
@@ -1132,12 +1222,50 @@ onUnmounted(() => {
           {{ copyNotice }}
         </p>
         <pre v-if="resume" class="command">{{ resume }}</pre>
-        <h3 class="transcript-heading">对话预览</h3>
+        <h3 class="transcript-heading">对话记录</h3>
+        <p class="muted">
+          {{
+            detail.session.completeness === "complete"
+              ? "统计完整"
+              : detail.session.completeness === "none"
+                ? "无用量记录"
+                : "部分统计"
+          }}
+          · 来源 {{ detail.session.provider || "codex" }} · 共
+          {{ detail.total }} 条消息
+        </p>
+        <div class="message-controls">
+          <label class="search-box"
+            ><Search :size="16" /><input
+              v-model="messageSearch"
+              aria-label="会话内搜索"
+              placeholder="搜索此会话"
+              @keydown.enter="loadMessages(0)" /></label
+          ><button
+            class="button secondary"
+            :disabled="busy || detail.session.missing"
+            @click="loadMessages(0)"
+          >
+            搜索</button
+          ><button
+            class="button secondary"
+            :disabled="busy || messagePage === 0"
+            @click="loadMessages(messagePage - 1)"
+          >
+            较新消息</button
+          ><button
+            class="button secondary"
+            :disabled="busy || (messagePage + 1) * 50 >= detail.total"
+            @click="loadMessages(messagePage + 1)"
+          >
+            较早消息
+          </button>
+        </div>
         <p v-if="detail.session.missing" class="muted">
           原始日志已移除，仅保留索引与用量统计。
         </p>
         <p v-if="detail.truncated" class="muted">
-          显示前 150 条消息，每条最多 12,000 字符。
+          部分超长消息已截断为 24,000 字符。每页 50 条，默认从最新消息开始。
         </p>
         <article
           v-for="(m, i) in detail.messages"
@@ -1168,6 +1296,29 @@ onUnmounted(() => {
           <p class="mono">{{ e.sessionId }}</p>
           <p class="path-wrap">{{ e.path }}</p>
         </div>
+        <div
+          v-if="!evidence.shared && !evidence.link && !evidence.error"
+          class="ownership-confirm"
+        >
+          <p>
+            只有引用线索时，不会进入清理。你可以核实后确认所属项目；此确认只对当前扫描有效。
+          </p>
+          <select v-model="confirmedProject" aria-label="确认临时文件所属项目">
+            <option value="">选择所属项目</option>
+            <option v-for="p in data?.projects" :key="p.path" :value="p.path">
+              {{ p.path }}
+            </option></select
+          ><button
+            class="button secondary"
+            :disabled="!confirmedProject || busy"
+            @click="confirmTemp"
+          >
+            确认归属
+          </button>
+        </div>
+        <p v-if="evidence.cleanupBlocked" class="banner warning">
+          {{ evidence.cleanupBlocked }}
+        </p>
         <p v-if="evidence.evidence.length" class="muted">
           最多显示 50
           条引用。命令参数或工具输出可能只是查询此路径，不能据此认定它由该会话创建。
@@ -1181,7 +1332,9 @@ onUnmounted(() => {
             <p>
               {{
                 plan.kind === "session"
-                  ? "计划永久删除会话日志，保留已索引的用量统计。"
+                  ? plan.backup
+                    ? "计划归档并压缩备份后移除原日志，可在清理历史恢复。备份仍占用部分空间。"
+                    : "计划永久删除会话日志，保留已索引的用量统计，无法恢复对话。"
                   : "计划移入 macOS 废纸篓；清空废纸篓后才会释放空间。"
               }}
             </p>
@@ -1238,43 +1391,11 @@ onUnmounted(() => {
       >
       <template v-if="settings"
         ><dl class="detail-meta">
-          <dt>Codex Home</dt>
-          <dd>{{ data?.home }}</dd>
           <dt>独立数据库</dt>
           <dd>{{ data?.database }}</dd>
-          <dt>临时目录</dt>
-          <dd>
-            <div v-for="root in data?.tempRoots" :key="root">{{ root }}</div>
-          </dd>
         </dl>
-        <div class="settings-notes">
-          <h3>统计如何计算</h3>
-          <p>
-            输入包含缓存输入，输出包含推理输出；这些子项不会重复相加。用量按日志累计计数的增量计算，重复快照去重。
-          </p>
-          <p>
-            跨会话的相同 turn ID
-            与用量快照只统计一次。父日志缺失、历史格式差异或日志不完整时，分叉归属可能不完整。暂不单独计入独立压缩事件。
-          </p>
-          <p>
-            Token
-            按请求记录中的工作目录归类；会话数量与体积按会话初始目录归类。日期使用本机时区。
-          </p>
-          <h3>本地数据与清理</h3>
-          <p>
-            所有索引存放在独立 SQLite
-            数据库，不上传日志。删除源日志后保留已索引用量，供历史查询；未来新请求仍需重新扫描。
-          </p>
-          <p>
-            临时文件只记录路径关联线索。扫描不跟随符号链接；清理会重新验证路径、修改时间及进程占用。会话删除由
-            Codex CLI 执行。
-          </p>
-          <p>
-            可用 CODEX_HOME 和 AI_ATLAS_DB 环境变量指定数据源与数据库。Codex CLI
-            自动从 PATH、Homebrew 和 NVM 位置查找，也可用 AI_ATLAS_CODEX 指定。
-          </p>
-        </div></template
-      >
+        <PreferencesPanel @saved="perform(refresh)"
+      /></template>
     </div>
   </dialog>
 </template>

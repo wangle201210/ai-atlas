@@ -23,7 +23,19 @@ export const api = {
   },
   status: async (): Promise<ScanStatus> => {
     const v = await (await backend()).Status();
-    return { ...v, errors: v.errors ?? [] };
+    return { ...v, errors: v.errors ?? [], failedFiles: v.failedFiles ?? [] };
+  },
+  cancelScan: async () => (await backend()).CancelScan(),
+  retryFailed: async () => (await backend()).RetryFailed(),
+  confirmTemp: async (path: string, project: string) =>
+    (await backend()).ConfirmTempProject(path, project),
+  messages: async (
+    id: string,
+    query: string,
+    page: number,
+  ): Promise<Detail> => {
+    const v = await (await backend()).SessionMessages(id, query, page);
+    return { ...v, messages: v.messages ?? [] };
   },
   scan: async (temps: boolean) => (await backend()).StartScan(temps),
   sessions: async (query: SessionQuery): Promise<SessionPage> => {

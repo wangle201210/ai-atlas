@@ -24,6 +24,8 @@ func openStore(path string) (*sql.DB, error) {
  CREATE INDEX IF NOT EXISTS events_session ON events(session_id);
  CREATE TABLE IF NOT EXISTS refs(session_id TEXT NOT NULL,path TEXT NOT NULL,project TEXT NOT NULL,kind TEXT NOT NULL,PRIMARY KEY(session_id,path,project,kind));
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS messages(session_id TEXT NOT NULL,seq INTEGER NOT NULL,offset INTEGER NOT NULL,length INTEGER NOT NULL,role TEXT NOT NULL,time TEXT NOT NULL,PRIMARY KEY(session_id,seq));
+ CREATE TABLE IF NOT EXISTS recovery(id TEXT PRIMARY KEY,data TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS audit(time TEXT NOT NULL,kind TEXT NOT NULL,target TEXT NOT NULL,result TEXT NOT NULL);
  CREATE VIEW IF NOT EXISTS unique_events AS SELECT key,session_id,project,day,input,cached,output,reasoning,total FROM (
  SELECT e.*,ROW_NUMBER() OVER(PARTITION BY e.key ORDER BY s.created,s.id) AS rank FROM events e JOIN sessions s ON s.id=e.session_id) WHERE rank=1;
@@ -79,6 +81,11 @@ func (s *Service) allSessions() ([]Session, error) {
 	}
 	for i := range out {
 		out[i].Usage = usages[out[i].ID]
+		if out[i].Completeness == "" {
+			out[i].Completeness = "partial"
+			out[i].Warning = "请刷新索引以检测统计完整性"
+			out[i].HasUsage = out[i].Usage.Total > 0
+		}
 	}
 	return out, rows.Err()
 }

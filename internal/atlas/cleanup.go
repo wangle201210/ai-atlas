@@ -43,6 +43,10 @@ func (s *Service) validateTemp(path string) error {
 	if v.Link {
 		return errors.New("不处理符号链接")
 	}
+	classifyTemp(&v)
+	if v.CleanupBlocked != "" {
+		return errors.New(v.CleanupBlocked)
+	}
 	if len(v.Evidence) == 0 {
 		return errors.New("归属未知，禁止批量清理")
 	}
@@ -50,7 +54,7 @@ func (s *Service) validateTemp(path string) error {
 		return errors.New("目录扫描不完整")
 	}
 	allowed := false
-	for _, root := range s.roots {
+	for _, root := range s.tempRoots() {
 		if filepath.Dir(path) == root && path != root {
 			allowed = true
 		}
@@ -65,6 +69,17 @@ func (s *Service) validateTemp(path string) error {
 	if canonicalTmp(resolved) != canonicalTmp(path) {
 		return errors.New("路径含符号链接跳转")
 	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	n, _, err := measure(path)
+	if err != nil {
+		return err
+	}
+	if info.ModTime().UnixNano() != v.Mtime || n != v.Bytes {
+		return errors.New("扫描后文件发生变化，请重新扫描并确认归属")
+	}
 	return nil
 }
 func (s *Service) validateSession(v Session) error {
@@ -74,7 +89,7 @@ func (s *Service) validateSession(v Session) error {
 	if v.Missing {
 		return errors.New("原始日志已移除")
 	}
-	rel, err := filepath.Rel(s.home, v.Path)
+	rel, err := filepath.Rel(s.homeFor(v), v.Path)
 	if err != nil {
 		return err
 	}
@@ -85,7 +100,7 @@ func (s *Service) validateSession(v Session) error {
 	if err != nil {
 		return err
 	}
-	root, err := filepath.EvalSymlinks(s.home)
+	root, err := filepath.EvalSymlinks(s.homeFor(v))
 	if err != nil {
 		return err
 	}
@@ -144,7 +159,7 @@ func (s *Service) PreviewClean(kind string, ids []string) (CleanPlan, error) {
 		return CleanPlan{}, errors.New("请等待当前扫描或操作完成")
 	}
 	defer s.operation.Unlock()
-	plan := CleanPlan{Token: randomID(), Kind: kind, Items: []CleanItem{}, Expires: time.Now().Add(5 * time.Minute)}
+	plan := CleanPlan{Backup: s.Settings().BackupSessions, Token: randomID(), Kind: kind, Items: []CleanItem{}, Expires: time.Now().Add(5 * time.Minute)}
 	seen := map[string]bool{}
 	for _, id := range ids {
 		if seen[id] {
@@ -161,7 +176,7 @@ func (s *Service) PreviewClean(kind string, ids []string) (CleanPlan, error) {
 				err = s.validateSession(v)
 			}
 			if err == nil {
-				_, err = codexBinary()
+				_, err = s.cliBinary()
 			}
 			if err == nil {
 				info, e := os.Stat(v.Path)
@@ -255,23 +270,27 @@ func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error
 				return err
 			}
 			if plan.Kind == "temp" {
-				user, err := os.UserHomeDir()
-				if err != nil {
-					return err
-				}
-				trash := filepath.Join(user, ".Trash")
-				if err = os.MkdirAll(trash, 0700); err != nil {
-					return err
-				}
-				target := filepath.Join(trash, "ai-atlas-"+randomID()+"-"+filepath.Base(item.Path))
-				if err = os.Rename(item.Path, target); err != nil {
+				if err = s.trashWithRecovery(item); err != nil {
 					return err
 				}
 				r.Message = "已移入废纸篓；清空废纸篓后释放空间"
+			} else if plan.Backup {
+				v, err := s.session(item.ID)
+				if err != nil {
+					return err
+				}
+				if err = s.backupAndCleanSession(v); err != nil {
+					return err
+				}
+				r.Message = "日志已归档并压缩备份，可在清理历史中恢复；备份仍占用部分空间"
 			} else {
+				v, err := s.session(item.ID)
+				if err != nil {
+					return err
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 				defer cancel()
-				cmd, err := s.codexCommand(ctx, "delete", "--force", item.ID)
+				cmd, err := s.codexCommandHome(ctx, s.homeFor(v), "delete", "--force", item.ID)
 				if err != nil {
 					return err
 				}
@@ -285,6 +304,9 @@ func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error
 					return err
 				}
 				r.Message = "会话已删除，历史用量统计已保留"
+				if err = s.saveRecovery(Recovery{ID: randomID(), Kind: "permanent", Source: item.Path, SessionID: item.ID, Home: s.homeFor(v), Created: time.Now().Format(time.RFC3339Nano), State: "deleted", Size: item.Bytes}); err != nil {
+					return err
+				}
 			}
 			return nil
 		}()
@@ -297,6 +319,13 @@ func (s *Service) ExecuteClean(token, confirmation string) ([]CleanResult, error
 			return results, fmt.Errorf("写入操作记录失败: %w", err)
 		}
 	}
+	err := s.refreshStorage(context.Background())
+	if err != nil {
+		return results, err
+	}
+	s.mu.Lock()
+	s.temps = []TempFile{}
+	s.mu.Unlock()
 	return results, nil
 }
 func (s *Service) SetArchived(id string, archive bool) error {
@@ -317,7 +346,7 @@ func (s *Service) SetArchived(id string, archive bool) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd, err := s.codexCommand(ctx, verb, id)
+	cmd, err := s.codexCommandHome(ctx, s.homeFor(v), verb, id)
 	if err != nil {
 		return err
 	}
@@ -336,5 +365,5 @@ func (s *Service) ResumeCommand(id string) (string, error) {
 		return "", err
 	}
 	quote := func(v string) string { return "'" + strings.ReplaceAll(v, "'", "'\"'\"'") + "'" }
-	return "CODEX_HOME=" + quote(s.home) + " codex -C " + quote(v.Project) + " resume " + quote(v.ID), nil
+	return "CODEX_HOME=" + quote(s.homeFor(v)) + " codex -C " + quote(v.Project) + " resume " + quote(v.ID), nil
 }
