@@ -41,6 +41,14 @@
 
 ![数据源与扫描范围](docs/screenshots/settings.png)
 
+## 联系与反馈
+
+使用 AI Atlas 遇到问题，或有功能建议，欢迎扫码添加作者微信交流，添加时请备注 **AI Atlas**。
+
+<img src="docs/wechat/me.jpg" alt="作者 wanna 的微信二维码，扫码添加好友交流 AI Atlas 使用问题" width="300" />
+
+Bug 和功能需求也可以提交到 [GitHub Issues](https://github.com/wangle201210/ai-atlas/issues)，方便跟踪处理进度。
+
 ## 运行
 
 需要 Go 1.25+、Node.js 22.12+、npm、Xcode Command Line Tools。清理/归档需要 Codex CLI；占用检查需要 `lsof`。
