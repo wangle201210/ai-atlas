@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-const parserVersion = "4"
+const parserVersion = "5"
 
 type counters struct {
 	Input     int64 `json:"input_tokens"`
@@ -153,11 +153,19 @@ func parseSessionContext(ctx context.Context, path string, info os.FileInfo) (pa
 	err := readRecordsContext(ctx, path, func(r record, p payload) error {
 		line++
 		if r.Type == "session_meta" {
-			out.Session.ID = p.ID
-			out.Session.Project = p.Cwd
-			out.Session.Created = cmp.Or(p.Timestamp, r.Timestamp)
-			out.Session.Parent = p.Parent
-			project = p.Cwd
+			// Fork rollouts can replay their parent's session_meta after their
+			// own header. Only the first header owns this physical log file.
+			if out.Session.ID == "" {
+				if p.ID == "" {
+					return errors.New("会话首个 session_meta 缺少 ID")
+				}
+				out.Session.ID = p.ID
+				out.Session.Project = p.Cwd
+				out.Session.Created = cmp.Or(p.Timestamp, r.Timestamp)
+				out.Session.Parent = p.Parent
+			}
+			// Replayed history can still supply context for its usage events.
+			project = cmp.Or(p.Cwd, project)
 		}
 		if r.Type == "turn_context" {
 			project = cmp.Or(p.Cwd, project)

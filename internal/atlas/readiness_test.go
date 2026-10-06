@@ -248,7 +248,7 @@ func TestObjectArgumentsAndPerFileRetryCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.ParserVersion != "4" {
+	if v.ParserVersion != parserVersion {
 		t.Fatal("parser version not persisted")
 	}
 	// A stale per-file cache must be reparsed even though the global scan version is current.
@@ -261,11 +261,48 @@ func TestObjectArgumentsAndPerFileRetryCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err = s.session(id)
-	if err != nil || v.ParserVersion != "4" {
+	if err != nil || v.ParserVersion != parserVersion {
 		t.Fatalf("stale file cache skipped: %+v %v", v, err)
 	}
 	var n int
 	if err = s.db.QueryRow("SELECT COUNT(*) FROM refs WHERE session_id=? AND path='/tmp/object-argument'", id).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("object arguments not indexed: %d %v (%s)", n, err, p)
+	}
+}
+
+func TestForkReplayMetadataKeepsPhysicalLogOwner(t *testing.T) {
+	s := testService(t)
+	parentID := "00000000-0000-0000-0000-000000000001"
+	childID := "00000000-0000-0000-0000-000000000002"
+	parent := writeLog(t, s.home, parentID, "", []map[string]any{ctx("parent-turn", "/projects/atlas"), tokens(100, 100)})
+	child := writeLog(t, s.home, childID, parentID, []map[string]any{
+		{"type": "session_meta", "timestamp": "2020-01-01T00:00:00Z", "payload": map[string]any{"id": parentID, "cwd": "/projects/inherited", "timestamp": "2020-01-01T00:00:00Z"}},
+		ctx("parent-turn", "/projects/atlas"), tokens(100, 100), ctx("child-turn", "/projects/child"), tokens(300, 200),
+	})
+	p, err := parseSession(child, mustStat(t, child))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Session.ID != childID || p.Session.Parent != parentID || p.Session.Project != "/projects/atlas" || p.Session.Created != "2026-01-01T00:00:00Z" {
+		t.Fatalf("replayed header replaced owner: %+v", p.Session)
+	}
+	if err = Scan(s, false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.Overview("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := mustStat(t, parent).Size() + mustStat(t, child).Size()
+	if v.Sessions != 2 || v.Bytes != expected || v.Usage.Total != 300 {
+		t.Fatalf("fork storage omitted or inherited usage double-counted: sessions=%d bytes=%d/%d usage=%d", v.Sessions, v.Bytes, expected, v.Usage.Total)
+	}
+	// The same storage total must survive cached scans.
+	if err = Scan(s, false); err != nil {
+		t.Fatal(err)
+	}
+	v, err = s.Overview("", "")
+	if err != nil || v.Sessions != 2 || v.Bytes != expected {
+		t.Fatalf("cached scan lost a physical rollout: %+v %v", v, err)
 	}
 }

@@ -628,11 +628,11 @@ onUnmounted(() => {
               >
             </article>
             <article class="stat-card">
-              <div><span>会话日志体积</span><HardDrive :size="18" /></div>
+              <div><span>已索引会话日志</span><HardDrive :size="18" /></div>
               <strong
                 >{{ bytes(data?.bytes).split(" ")[0]
                 }}<em>{{ bytes(data?.bytes).split(" ")[1] }}</em></strong
-              ><small>本机仍存在的日志<span>逻辑文件大小</span></small>
+              ><small>不含缓存与临时文件<span>逻辑文件大小</span></small>
             </article>
           </section>
           <div v-if="data && !data.sessions" class="empty-state panel">
@@ -914,7 +914,7 @@ onUnmounted(() => {
           <section class="storage-hero">
             <div class="storage-symbol"><HardDrive :size="36" /></div>
             <div>
-              <span>CODEX HOME</span>
+              <span>CODEX HOME · 目录占用</span>
               <h2>{{ bytes(storageTotal) }}</h2>
               <p class="mono">{{ data?.home }}</p>
             </div>
@@ -997,8 +997,8 @@ onUnmounted(() => {
         <template v-if="tab === 'temps'">
           <div class="banner info persistent">
             <ShieldCheck :size="18" /><span
-              >路径引用是关联线索，不等于创建证明。未知归属、被占用或最近 24
-              小时修改的文件不会进入清理。</span
+              >临时文件与会话日志分别统计，系统临时目录还可能包含其他应用文件。路径引用不等于创建证明。未知归属、被占用或最近
+              24 小时修改的文件不会进入清理。</span
             >
           </div>
           <section class="panel">
