@@ -70,7 +70,7 @@ func (s *Service) Check() error {
 		s.state.CheckedAt = time.Now().Format(time.RFC3339)
 		if err != nil {
 			s.state.Phase = "error"
-			s.state.Error = "检查失败，请检查网络后重试：" + err.Error()
+			s.state.Error = "检查更新失败：" + err.Error()
 			return
 		}
 		if rel == nil {

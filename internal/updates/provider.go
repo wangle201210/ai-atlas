@@ -33,11 +33,12 @@ func (p VerifiedProvider) Check(ctx context.Context, req updater.CheckRequest) (
 	return rel, nil
 }
 func NewProvider() (updater.Provider, error) {
-	provider, err := github.New(github.Config{Repository: Repository, ChecksumAsset: "SHA256SUMS", HTTPClient: &http.Client{Timeout: 15 * time.Minute}, AssetMatcher: matchAsset})
+	client := &http.Client{Timeout: 15 * time.Minute}
+	provider, err := github.New(github.Config{Repository: Repository, ChecksumAsset: "SHA256SUMS", HTTPClient: client, AssetMatcher: matchAsset})
 	if err != nil {
 		return nil, err
 	}
-	return VerifiedProvider{provider}, nil
+	return VerifiedProvider{&releaseFallback{Provider: provider, client: client, releasesURL: ReleasesURL}}, nil
 }
 func matchAsset(req updater.CheckRequest, assets []github.ReleaseAsset) int {
 	// This release pipeline distributes complete macOS app bundles, never loose binaries.
